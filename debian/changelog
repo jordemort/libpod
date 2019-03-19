@@ -1,3 +1,9 @@
+podman (1.2.0-1~ubuntu16.04.2~ppa7) xenial; urgency=medium
+
+  * autobuilt 537c382
+
+ -- Lokesh Mandvekar (Bot) <lsm5+bot@fedoraproject.org>  Tue, 19 Mar 2019 17:50:16 +0000
+
 podman (1.2.0-1~ubuntu16.04.2~ppa6) xenial; urgency=medium
 
   * only have /usr/lib/cri-o-runc/sbin/runc in libpod.conf 
