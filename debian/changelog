@@ -1,3 +1,9 @@
+podman (1.2.0-1~dev~ubuntu18.04~ppa6) bionic; urgency=medium
+
+  * autobuilt ac523cb
+
+ -- Lokesh Mandvekar (Bot) <lsm5+bot@fedoraproject.org>  Tue, 19 Mar 2019 15:14:37 +0000
+
 podman (1.2.0-1~dev~ubuntu18.04~ppa5) bionic; urgency=medium
 
   * containers-common dep properly obsoletes skopeo-containers 
