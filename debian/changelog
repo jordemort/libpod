@@ -1,3 +1,9 @@
+podman (1.2.0-1~ubuntu16.04.2~ppa9) xenial; urgency=medium
+
+  * autobuilt 68e3df3
+
+ -- Lokesh Mandvekar (Bot) <lsm5+bot@fedoraproject.org>  Fri, 22 Mar 2019 04:58:42 +0000
+
 podman (1.2.0-1~ubuntu16.04.2~ppa8) xenial; urgency=medium
 
   * autobuilt c230f0c
