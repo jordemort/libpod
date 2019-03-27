@@ -1,3 +1,9 @@
+podman (1.2.0-1~dev~ubuntu18.04~ppa12) bionic; urgency=medium
+
+  * autobuilt fbabe55
+
+ -- Lokesh Mandvekar (Bot) <lsm5+bot@fedoraproject.org>  Wed, 27 Mar 2019 17:12:17 +0000
+
 podman (1.2.0-1~dev~ubuntu18.04~ppa11) bionic; urgency=medium
 
   * autobuilt d0c6a35
