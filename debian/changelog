@@ -1,3 +1,9 @@
+podman (1.3.0-1~ubuntu16.04.2~ppa5) xenial; urgency=medium
+
+  * autobuilt bc320be
+
+ -- Lokesh Mandvekar (Bot) <lsm5+bot@fedoraproject.org>  Sat, 06 Apr 2019 05:07:14 +0000
+
 podman (1.3.0-1~ubuntu16.04.2~ppa4) xenial; urgency=medium
 
   * autobuilt bda28c6
