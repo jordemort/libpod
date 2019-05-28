@@ -2,19 +2,19 @@ package main
 
 import (
 	"fmt"
-	"github.com/containers/libpod/cmd/podman/cliconfig"
-	"github.com/spf13/cobra"
 	"io"
 	"os"
 	"strings"
 
 	"github.com/containers/buildah"
 	"github.com/containers/image/manifest"
+	"github.com/containers/libpod/cmd/podman/cliconfig"
 	"github.com/containers/libpod/cmd/podman/libpodruntime"
 	"github.com/containers/libpod/libpod"
 	"github.com/containers/libpod/libpod/image"
 	"github.com/containers/libpod/pkg/util"
 	"github.com/pkg/errors"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -28,6 +28,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			commitCommand.InputArgs = args
 			commitCommand.GlobalFlags = MainGlobalOpts
+			commitCommand.Remote = remoteclient
 			return commitCmd(&commitCommand)
 		},
 		Example: `podman commit -q --message "committing container to image" reverent_golick image-commited
@@ -41,17 +42,17 @@ func init() {
 	commitCommand.SetHelpTemplate(HelpTemplate())
 	commitCommand.SetUsageTemplate(UsageTemplate())
 	flags := commitCommand.Flags()
-	flags.StringSliceVarP(&commitCommand.Change, "change", "c", []string{}, fmt.Sprintf("Apply the following possible instructions to the created image (default []): %s", strings.Join(libpod.ChangeCmds, " | ")))
+	flags.StringArrayVarP(&commitCommand.Change, "change", "c", []string{}, fmt.Sprintf("Apply the following possible instructions to the created image (default []): %s", strings.Join(libpod.ChangeCmds, " | ")))
 	flags.StringVarP(&commitCommand.Format, "format", "f", "oci", "`Format` of the image manifest and metadata")
 	flags.StringVarP(&commitCommand.Message, "message", "m", "", "Set commit message for imported image")
 	flags.StringVarP(&commitCommand.Author, "author", "a", "", "Set the author for the image committed")
 	flags.BoolVarP(&commitCommand.Pause, "pause", "p", false, "Pause container during commit")
 	flags.BoolVarP(&commitCommand.Quiet, "quiet", "q", false, "Suppress output")
-
+	flags.BoolVar(&commitCommand.IncludeVolumes, "include-volumes", false, "Include container volumes as image volumes")
 }
 
 func commitCmd(c *cliconfig.CommitValues) error {
-	runtime, err := libpodruntime.GetRuntime(&c.PodmanCommand)
+	runtime, err := libpodruntime.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}
@@ -82,6 +83,9 @@ func commitCmd(c *cliconfig.CommitValues) error {
 	if c.Flag("change").Changed {
 		for _, change := range c.Change {
 			splitChange := strings.Split(strings.ToUpper(change), "=")
+			if len(splitChange) == 1 {
+				splitChange = strings.Split(strings.ToUpper(change), " ")
+			}
 			if !util.StringInSlice(splitChange[0], libpod.ChangeCmds) {
 				return errors.Errorf("invalid syntax for --change: %s", change)
 			}
@@ -109,11 +113,12 @@ func commitCmd(c *cliconfig.CommitValues) error {
 		PreferredManifestType: mimeType,
 	}
 	options := libpod.ContainerCommitOptions{
-		CommitOptions: coptions,
-		Pause:         c.Pause,
-		Message:       c.Message,
-		Changes:       c.Change,
-		Author:        c.Author,
+		CommitOptions:  coptions,
+		Pause:          c.Pause,
+		IncludeVolumes: c.IncludeVolumes,
+		Message:        c.Message,
+		Changes:        c.Change,
+		Author:         c.Author,
 	}
 	newImage, err := ctr.Commit(getContext(), reference, options)
 	if err != nil {

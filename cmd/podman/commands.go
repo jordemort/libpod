@@ -11,29 +11,16 @@ const remoteclient = false
 // Commands that the local client implements
 func getMainCommands() []*cobra.Command {
 	rootCommands := []*cobra.Command{
-		_attachCommand,
 		_commitCommand,
-		_createCommand,
-		_diffCommand,
 		_execCommand,
-		_generateCommand,
 		_playCommand,
-		&_psCommand,
 		_loginCommand,
 		_logoutCommand,
 		_mountCommand,
-		_pauseCommand,
-		_portCommand,
 		_refreshCommand,
-		_restartCommand,
-		_rmCommand,
-		_runCommand,
 		_searchCommand,
-		_startCommand,
 		_statsCommand,
-		_topCommand,
-		_umountCommand,
-		_unpauseCommand,
+		_unshareCommand,
 	}
 
 	if len(_varlinkCommand.Use) > 0 {
@@ -53,38 +40,14 @@ func getImageSubCommands() []*cobra.Command {
 func getContainerSubCommands() []*cobra.Command {
 
 	return []*cobra.Command{
-		_attachCommand,
-		_checkpointCommand,
 		_cleanupCommand,
 		_commitCommand,
-		_createCommand,
-		_diffCommand,
 		_execCommand,
-		_exportCommand,
-		_killCommand,
 		_mountCommand,
-		_pauseCommand,
-		_portCommand,
-		_pruneContainersCommand,
 		_refreshCommand,
-		_restartCommand,
-		_restoreCommand,
-		_rmCommand,
-		_runCommand,
 		_runlabelCommand,
-		_startCommand,
 		_statsCommand,
-		_stopCommand,
-		_topCommand,
 		_umountCommand,
-		_unpauseCommand,
-		_waitCommand,
-	}
-}
-
-func getGenerateSubCommands() []*cobra.Command {
-	return []*cobra.Command{
-		_containerKubeCommand,
 	}
 }
 
@@ -106,14 +69,14 @@ func getTrustSubCommands() []*cobra.Command {
 // Commands that the local client implements
 func getSystemSubCommands() []*cobra.Command {
 	return []*cobra.Command{
-		_pruneSystemCommand,
 		_renumberCommand,
 		_dfSystemCommand,
+		_migrateCommand,
 	}
 }
 
 // Commands that the local client implements
-func getHealtcheckSubCommands() []*cobra.Command {
+func getHealthcheckSubCommands() []*cobra.Command {
 	return []*cobra.Command{
 		_healthcheckrunCommand,
 	}

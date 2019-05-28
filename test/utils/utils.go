@@ -40,6 +40,8 @@ type PodmanTest struct {
 	RemoteTest         bool
 	RemotePodmanBinary string
 	VarlinkSession     *os.Process
+	VarlinkEndpoint    string
+	VarlinkCommand     *exec.Cmd
 }
 
 // PodmanSession wraps the gexec.session so we can extend it
@@ -67,7 +69,9 @@ func (p *PodmanTest) PodmanAsUserBase(args []string, uid, gid uint32, cwd string
 	podmanBinary := p.PodmanBinary
 	if p.RemoteTest {
 		podmanBinary = p.RemotePodmanBinary
+		env = append(env, fmt.Sprintf("PODMAN_VARLINK_ADDRESS=%s", p.VarlinkEndpoint))
 	}
+
 	if env == nil {
 		fmt.Printf("Running: %s %s\n", podmanBinary, strings.Join(podmanOptions, " "))
 	} else {
@@ -311,6 +315,8 @@ func (s *PodmanSession) IsJSONOutputValid() bool {
 // WaitWithDefaultTimeout waits for process finished with defaultWaitTimeout
 func (s *PodmanSession) WaitWithDefaultTimeout() {
 	s.Wait(defaultWaitTimeout)
+	os.Stdout.Sync()
+	os.Stderr.Sync()
 	fmt.Println("output:", s.OutputToString())
 }
 

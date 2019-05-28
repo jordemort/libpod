@@ -20,6 +20,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			healthcheckRunCommand.InputArgs = args
 			healthcheckRunCommand.GlobalFlags = MainGlobalOpts
+			healthcheckRunCommand.Remote = remoteclient
 			return healthCheckCmd(&healthcheckRunCommand)
 		},
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -37,7 +38,7 @@ func init() {
 }
 
 func healthCheckCmd(c *cliconfig.HealthCheckValues) error {
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrap(err, "could not get runtime")
 	}

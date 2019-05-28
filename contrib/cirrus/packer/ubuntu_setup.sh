@@ -8,13 +8,7 @@ set -e
 # Load in library (copied by packer, before this script was run)
 source /tmp/libpod/$SCRIPT_BASE/lib.sh
 
-req_env_var "
-SCRIPT_BASE $SCRIPT_BASE
-CNI_COMMIT $CNI_COMMIT
-CRIO_COMMIT $CRIO_COMMIT
-CRIU_COMMIT $CRIU_COMMIT
-RUNC_COMMIT $RUNC_COMMIT
-"
+req_env_var SCRIPT_BASE CNI_COMMIT CRIO_COMMIT CRIU_COMMIT RUNC_COMMIT
 
 install_ooe
 
@@ -49,7 +43,7 @@ ooe.sh sudo -E apt-get -qq install \
     gettext \
     go-md2man \
     golang \
-    iproute \
+    iproute2 \
     iptables \
     libaio-dev \
     libapparmor-dev \
@@ -68,6 +62,7 @@ ooe.sh sudo -E apt-get -qq install \
     libprotobuf-dev \
     libseccomp-dev \
     libseccomp2 \
+    libsystemd-dev \
     libtool \
     libudev-dev \
     lsof \

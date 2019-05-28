@@ -8,8 +8,9 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"strconv"
 	"text/template"
+
+	"github.com/containers/libpod/cmd/podman/shared"
 
 	"github.com/containers/buildah"
 	"github.com/containers/buildah/imagebuildah"
@@ -18,12 +19,13 @@ import (
 	"github.com/containers/image/types"
 	"github.com/containers/libpod/cmd/podman/cliconfig"
 	"github.com/containers/libpod/cmd/podman/libpodruntime"
-	"github.com/containers/libpod/cmd/podman/shared"
 	"github.com/containers/libpod/libpod"
 	"github.com/containers/libpod/libpod/events"
 	"github.com/containers/libpod/libpod/image"
 	"github.com/containers/libpod/pkg/rootless"
+	"github.com/containers/storage/pkg/archive"
 	"github.com/pkg/errors"
+	"k8s.io/api/core/v1"
 )
 
 // LocalRuntime describes a typical libpod runtime
@@ -42,6 +44,11 @@ type Container struct {
 	*libpod.Container
 }
 
+// Pod encapsulates the libpod.Pod structure, helps with remote vs. local
+type Pod struct {
+	*libpod.Pod
+}
+
 // Volume ...
 type Volume struct {
 	*libpod.Volume
@@ -51,8 +58,8 @@ type Volume struct {
 type VolumeFilter func(*Volume) bool
 
 // GetRuntime returns a LocalRuntime struct with the actual runtime embedded in it
-func GetRuntime(c *cliconfig.PodmanCommand) (*LocalRuntime, error) {
-	runtime, err := libpodruntime.GetRuntime(c)
+func GetRuntime(ctx context.Context, c *cliconfig.PodmanCommand) (*LocalRuntime, error) {
+	runtime, err := libpodruntime.GetRuntime(ctx, c)
 	if err != nil {
 		return nil, err
 	}
@@ -113,8 +120,8 @@ func (r *LocalRuntime) RemoveImage(ctx context.Context, img *ContainerImage, for
 }
 
 // PruneImages is wrapper into PruneImages within the image pkg
-func (r *LocalRuntime) PruneImages(all bool) ([]string, error) {
-	return r.ImageRuntime().PruneImages(all)
+func (r *LocalRuntime) PruneImages(ctx context.Context, all bool) ([]string, error) {
+	return r.ImageRuntime().PruneImages(ctx, all)
 }
 
 // Export is a wrapper to container export to a tarfile
@@ -123,38 +130,6 @@ func (r *LocalRuntime) Export(name string, path string) error {
 	if err != nil {
 		return errors.Wrapf(err, "error looking up container %q", name)
 	}
-	if os.Geteuid() != 0 {
-		state, err := ctr.State()
-		if err != nil {
-			return errors.Wrapf(err, "cannot read container state %q", ctr.ID())
-		}
-		if state == libpod.ContainerStateRunning || state == libpod.ContainerStatePaused {
-			data, err := ioutil.ReadFile(ctr.Config().ConmonPidFile)
-			if err != nil {
-				return errors.Wrapf(err, "cannot read conmon PID file %q", ctr.Config().ConmonPidFile)
-			}
-			conmonPid, err := strconv.Atoi(string(data))
-			if err != nil {
-				return errors.Wrapf(err, "cannot parse PID %q", data)
-			}
-			became, ret, err := rootless.JoinDirectUserAndMountNS(uint(conmonPid))
-			if err != nil {
-				return err
-			}
-			if became {
-				os.Exit(ret)
-			}
-		} else {
-			became, ret, err := rootless.BecomeRootInUserNS()
-			if err != nil {
-				return err
-			}
-			if became {
-				os.Exit(ret)
-			}
-		}
-	}
-
 	return ctr.Export(path)
 }
 
@@ -342,56 +317,12 @@ func (r *LocalRuntime) HealthCheck(c *cliconfig.HealthCheckValues) (libpod.Healt
 	return r.Runtime.HealthCheck(c.InputArgs[0])
 }
 
-// JoinOrCreateRootlessPod joins the specified pod if it is running or it creates a new user namespace
-// if the pod is stopped
-func (r *LocalRuntime) JoinOrCreateRootlessPod(pod *Pod) (bool, int, error) {
-	if os.Geteuid() == 0 {
-		return false, 0, nil
-	}
-	opts := rootless.Opts{
-		Argument: pod.ID(),
-	}
-
-	inspect, err := pod.Inspect()
-	if err != nil {
-		return false, 0, err
-	}
-	for _, ctr := range inspect.Containers {
-		prevCtr, err := r.LookupContainer(ctr.ID)
-		if err != nil {
-			return false, -1, err
-		}
-		s, err := prevCtr.State()
-		if err != nil {
-			return false, -1, err
-		}
-		if s != libpod.ContainerStateRunning && s != libpod.ContainerStatePaused {
-			continue
-		}
-		data, err := ioutil.ReadFile(prevCtr.Config().ConmonPidFile)
-		if err != nil {
-			return false, -1, errors.Wrapf(err, "cannot read conmon PID file %q", prevCtr.Config().ConmonPidFile)
-		}
-		conmonPid, err := strconv.Atoi(string(data))
-		if err != nil {
-			return false, -1, errors.Wrapf(err, "cannot parse PID %q", data)
-		}
-		return rootless.JoinDirectUserAndMountNSWithOpts(uint(conmonPid), &opts)
-	}
-
-	return rootless.BecomeRootInUserNSWithOpts(&opts)
-}
-
 // Events is a wrapper to libpod to obtain libpod/podman events
 func (r *LocalRuntime) Events(c *cliconfig.EventValues) error {
 	var (
 		fromStart   bool
 		eventsError error
 	)
-	options, err := shared.GenerateEventOptions(c.Filter, c.Since, c.Until)
-	if err != nil {
-		return errors.Wrapf(err, "unable to generate event options")
-	}
 	tmpl, err := template.New("events").Parse(c.Format)
 	if err != nil {
 		return err
@@ -401,7 +332,8 @@ func (r *LocalRuntime) Events(c *cliconfig.EventValues) error {
 	}
 	eventChannel := make(chan *events.Event)
 	go func() {
-		eventsError = r.Runtime.Events(fromStart, c.Stream, options, eventChannel)
+		readOpts := events.ReadOptions{FromStart: fromStart, Stream: c.Stream, Filters: c.Filter, EventChannel: eventChannel, Since: c.Since, Until: c.Until}
+		eventsError = r.Runtime.Events(readOpts)
 	}()
 
 	if eventsError != nil {
@@ -429,4 +361,40 @@ func (r *LocalRuntime) Events(c *cliconfig.EventValues) error {
 		}
 	}
 	return nil
+}
+
+// Diff shows the difference in two objects
+func (r *LocalRuntime) Diff(c *cliconfig.DiffValues, to string) ([]archive.Change, error) {
+	return r.Runtime.GetDiff("", to)
+}
+
+// GenerateKube creates kubernetes email from containers and pods
+func (r *LocalRuntime) GenerateKube(c *cliconfig.GenerateKubeValues) (*v1.Pod, *v1.Service, error) {
+	return shared.GenerateKube(c.InputArgs[0], c.Service, r.Runtime)
+}
+
+// GetPodsByStatus returns a slice of pods filtered by a libpod status
+func (r *LocalRuntime) GetPodsByStatus(statuses []string) ([]*libpod.Pod, error) {
+
+	filterFunc := func(p *libpod.Pod) bool {
+		state, _ := shared.GetPodStatus(p)
+		for _, status := range statuses {
+			if state == status {
+				return true
+			}
+		}
+		return false
+	}
+
+	pods, err := r.Runtime.Pods(filterFunc)
+	if err != nil {
+		return nil, err
+	}
+
+	return pods, nil
+}
+
+// GetVersion is an alias to satisfy interface{}
+func (r *LocalRuntime) GetVersion() (libpod.Version, error) {
+	return libpod.GetVersion()
 }

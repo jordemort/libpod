@@ -28,6 +28,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			infoCommand.InputArgs = args
 			infoCommand.GlobalFlags = MainGlobalOpts
+			infoCommand.Remote = remoteclient
 			return infoCmd(&infoCommand)
 		},
 		Example: `podman info`,
@@ -49,7 +50,7 @@ func infoCmd(c *cliconfig.InfoValues) error {
 	info := map[string]interface{}{}
 	remoteClientInfo := map[string]interface{}{}
 
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}

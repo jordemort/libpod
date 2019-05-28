@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -95,6 +96,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			imagesCommand.InputArgs = args
 			imagesCommand.GlobalFlags = MainGlobalOpts
+			imagesCommand.Remote = remoteclient
 			return imagesCmd(&imagesCommand)
 		},
 		Example: `podman images --format json
@@ -132,7 +134,7 @@ func imagesCmd(c *cliconfig.ImagesValues) error {
 		image       string
 	)
 
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "Could not get runtime")
 	}
@@ -241,7 +243,7 @@ func getImagesTemplateOutput(ctx context.Context, images []*adapter.ContainerIma
 		// If all is false and the image doesn't have a name, check to see if the top layer of the image is a parent
 		// to another image's top layer. If it is, then it is an intermediate image so don't print out if the --all flag
 		// is not set.
-		isParent, err := img.IsParent()
+		isParent, err := img.IsParent(ctx)
 		if err != nil {
 			logrus.Errorf("error checking if image is a parent %q: %v", img.ID(), err)
 		}
@@ -318,13 +320,14 @@ func getImagesJSONOutput(ctx context.Context, images []*adapter.ContainerImage) 
 
 func generateImagesOutput(ctx context.Context, images []*adapter.ContainerImage, opts imagesOptions) error {
 	templateMap := GenImageOutputMap()
-	if len(images) == 0 {
-		return nil
-	}
 	var out formats.Writer
 
 	switch opts.format {
 	case formats.JSONString:
+		// If 0 images are present, print nothing for JSON
+		if len(images) == 0 {
+			return nil
+		}
 		imagesOutput := getImagesJSONOutput(ctx, images)
 		out = formats.JSONStructArray{Output: imagesToGeneric([]imagesTemplateParams{}, imagesOutput)}
 	default:
@@ -359,6 +362,9 @@ func CreateFilterFuncs(ctx context.Context, r *adapter.LocalRuntime, filters []s
 	var filterFuncs []imagefilters.ResultFilter
 	for _, filter := range filters {
 		splitFilter := strings.Split(filter, "=")
+		if len(splitFilter) != 2 {
+			return nil, errors.Errorf("invalid filter syntax %s", filter)
+		}
 		switch splitFilter[0] {
 		case "before":
 			before, err := r.NewImageFromLocal(splitFilter[1])
@@ -373,7 +379,11 @@ func CreateFilterFuncs(ctx context.Context, r *adapter.LocalRuntime, filters []s
 			}
 			filterFuncs = append(filterFuncs, imagefilters.CreatedAfterFilter(after.Created()))
 		case "dangling":
-			filterFuncs = append(filterFuncs, imagefilters.DanglingFilter())
+			danglingImages, err := strconv.ParseBool(splitFilter[1])
+			if err != nil {
+				return nil, errors.Wrapf(err, "invalid filter dangling=%s", splitFilter[1])
+			}
+			filterFuncs = append(filterFuncs, imagefilters.DanglingFilter(danglingImages))
 		case "label":
 			labelFilter := strings.Join(splitFilter[1:], "=")
 			filterFuncs = append(filterFuncs, imagefilters.LabelFilter(ctx, labelFilter))

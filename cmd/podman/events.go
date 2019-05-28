@@ -13,11 +13,12 @@ var (
 	_eventsCommand    = &cobra.Command{
 		Use:   "events",
 		Args:  noSubArgs,
-		Short: "show podman events",
+		Short: "Show podman events",
 		Long:  eventsDescription,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eventsCommand.InputArgs = args
 			eventsCommand.GlobalFlags = MainGlobalOpts
+			eventsCommand.Remote = remoteclient
 			return eventsCmd(&eventsCommand)
 		},
 		Example: `podman events
@@ -39,7 +40,7 @@ func init() {
 }
 
 func eventsCmd(c *cliconfig.EventValues) error {
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "error creating libpod runtime")
 	}

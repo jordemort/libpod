@@ -14,10 +14,16 @@ var (
 		Long:  generateDescription,
 		RunE:  commandRunE(),
 	}
+
+	//	Commands that are universally implemented
+	generateCommands = []*cobra.Command{
+		_containerKubeCommand,
+		_containerSystemdCommand,
+	}
 )
 
 func init() {
 	generateCommand.Command = _generateCommand
-	generateCommand.AddCommand(getGenerateSubCommands()...)
+	generateCommand.AddCommand(generateCommands...)
 	generateCommand.SetUsageTemplate(UsageTemplate())
 }

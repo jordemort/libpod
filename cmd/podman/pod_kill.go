@@ -6,7 +6,6 @@ import (
 
 	"github.com/containers/libpod/cmd/podman/cliconfig"
 	"github.com/containers/libpod/pkg/adapter"
-	"github.com/containers/libpod/pkg/rootless"
 	"github.com/docker/docker/pkg/signal"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -25,6 +24,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			podKillCommand.InputArgs = args
 			podKillCommand.GlobalFlags = MainGlobalOpts
+			podKillCommand.Remote = remoteclient
 			return podKillCmd(&podKillCommand)
 		},
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -49,8 +49,7 @@ func init() {
 
 // podKillCmd kills one or more pods with a signal
 func podKillCmd(c *cliconfig.PodKillValues) error {
-	rootless.SetSkipStorageSetup(true)
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}

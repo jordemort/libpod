@@ -39,6 +39,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			statsCommand.InputArgs = args
 			statsCommand.GlobalFlags = MainGlobalOpts
+			statsCommand.Remote = remoteclient
 			return statsCmd(&statsCommand)
 		},
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -87,7 +88,7 @@ func statsCmd(c *cliconfig.StatsValues) error {
 		return errors.Errorf("you must specify --all, --latest, or at least one container")
 	}
 
-	runtime, err := libpodruntime.GetRuntime(&c.PodmanCommand)
+	runtime, err := libpodruntime.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}

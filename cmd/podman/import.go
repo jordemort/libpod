@@ -24,6 +24,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			importCommand.InputArgs = args
 			importCommand.GlobalFlags = MainGlobalOpts
+			importCommand.Remote = remoteclient
 			return importCmd(&importCommand)
 		},
 		Example: `podman import http://example.com/ctr.tar url-image
@@ -44,7 +45,7 @@ func init() {
 }
 
 func importCmd(c *cliconfig.ImportValues) error {
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}

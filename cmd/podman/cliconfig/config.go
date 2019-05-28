@@ -8,6 +8,7 @@ type PodmanCommand struct {
 	*cobra.Command
 	InputArgs   []string
 	GlobalFlags MainFlags
+	Remote      bool
 }
 
 type MainFlags struct {
@@ -31,6 +32,10 @@ type MainFlags struct {
 	CpuProfile string
 	LogLevel   string
 	TmpDir     string
+
+	RemoteUserName string
+	RemoteHost     string
+	VarlinkAddress string
 }
 
 type AttachValues struct {
@@ -88,12 +93,13 @@ type CheckpointValues struct {
 
 type CommitValues struct {
 	PodmanCommand
-	Change  []string
-	Format  string
-	Message string
-	Author  string
-	Pause   bool
-	Quiet   bool
+	Change         []string
+	Format         string
+	Message        string
+	Author         string
+	Pause          bool
+	Quiet          bool
+	IncludeVolumes bool
 }
 
 type ContainersPrune struct {
@@ -134,10 +140,16 @@ type ExportValues struct {
 	PodmanCommand
 	Output string
 }
-
 type GenerateKubeValues struct {
 	PodmanCommand
 	Service bool
+}
+
+type GenerateSystemdValues struct {
+	PodmanCommand
+	Name          bool
+	RestartPolicy string
+	StopTimeout   int
 }
 
 type HistoryValues struct {
@@ -157,6 +169,11 @@ type PruneContainersValues struct {
 	Force bool
 }
 
+type PodPruneValues struct {
+	PodmanCommand
+	Force bool
+}
+
 type ImportValues struct {
 	PodmanCommand
 	Change  []string
@@ -168,6 +185,12 @@ type InfoValues struct {
 	PodmanCommand
 	Debug  bool
 	Format string
+}
+
+type InitValues struct {
+	PodmanCommand
+	All    bool
+	Latest bool
 }
 
 type InspectValues struct {
@@ -571,6 +594,10 @@ type SystemPruneValues struct {
 }
 
 type SystemRenumberValues struct {
+	PodmanCommand
+}
+
+type SystemMigrateValues struct {
 	PodmanCommand
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/containers/image/docker"
 	"github.com/containers/image/pkg/docker/config"
 	"github.com/containers/libpod/cmd/podman/cliconfig"
 	"github.com/containers/libpod/libpod/image"
@@ -20,6 +21,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logoutCommand.InputArgs = args
 			logoutCommand.GlobalFlags = MainGlobalOpts
+			logoutCommand.Remote = remoteclient
 			return logoutCmd(&logoutCommand)
 		},
 		Example: `podman logout docker.io
@@ -65,12 +67,23 @@ func logoutCmd(c *cliconfig.LogoutValues) error {
 	}
 
 	err := config.RemoveAuthentication(sc, server)
-	switch err {
+	switch errors.Cause(err) {
 	case nil:
 		fmt.Printf("Removed login credentials for %s\n", server)
 		return nil
 	case config.ErrNotLoggedIn:
-		return errors.Errorf("Not logged into %s\n", server)
+		// username of user logged in to server (if one exists)
+		userFromAuthFile, passFromAuthFile, err := config.GetAuthentication(sc, server)
+		if err != nil {
+			return errors.Wrapf(err, "error reading auth file")
+		}
+		islogin := docker.CheckAuth(getContext(), sc, userFromAuthFile, passFromAuthFile, server)
+		if userFromAuthFile != "" && passFromAuthFile != "" && islogin == nil {
+			fmt.Printf("Not logged into %s with podman. Existing credentials were established via docker login. Please use docker logout instead.\n", server)
+			return nil
+		}
+		fmt.Printf("Not logged into %s\n", server)
+		return nil
 	default:
 		return errors.Wrapf(err, "error logging out of %q", server)
 	}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,33 +13,25 @@ import (
 	"time"
 
 	"github.com/containers/image/manifest"
-	"github.com/containers/libpod/cmd/podman/cliconfig"
 	"github.com/containers/libpod/cmd/podman/shared/parse"
 	"github.com/containers/libpod/libpod"
 	"github.com/containers/libpod/libpod/image"
 	ann "github.com/containers/libpod/pkg/annotations"
 	"github.com/containers/libpod/pkg/inspect"
 	ns "github.com/containers/libpod/pkg/namespaces"
-	"github.com/containers/libpod/pkg/rootless"
 	cc "github.com/containers/libpod/pkg/spec"
 	"github.com/containers/libpod/pkg/util"
 	"github.com/docker/docker/pkg/signal"
 	"github.com/docker/go-connections/nat"
 	"github.com/docker/go-units"
 	"github.com/google/shlex"
-	spec "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/selinux/go-selinux/label"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
-// getContext returns a non-nil, empty context
-func getContext() context.Context {
-	return context.TODO()
-}
-
-func CreateContainer(ctx context.Context, c *cliconfig.PodmanCommand, runtime *libpod.Runtime) (*libpod.Container, *cc.CreateConfig, error) {
+func CreateContainer(ctx context.Context, c *GenericCLIResults, runtime *libpod.Runtime) (*libpod.Container, *cc.CreateConfig, error) {
 	var (
 		healthCheck *manifest.Schema2HealthConfig
 		err         error
@@ -49,6 +40,9 @@ func CreateContainer(ctx context.Context, c *cliconfig.PodmanCommand, runtime *l
 	if c.Bool("trace") {
 		span, _ := opentracing.StartSpanFromContext(ctx, "createContainer")
 		defer span.Finish()
+	}
+	if c.Bool("rm") && c.String("restart") != "" && c.String("restart") != "no" {
+		return nil, nil, errors.Errorf("the --rm option conflicts with --restart")
 	}
 
 	rtc, err := runtime.GetConfig()
@@ -75,7 +69,8 @@ func CreateContainer(ctx context.Context, c *cliconfig.PodmanCommand, runtime *l
 	imageName := ""
 	var data *inspect.ImageData = nil
 
-	if rootfs == "" && !rootless.SkipStorageSetup() {
+	// Set the storage if we are running as euid == 0 and there is no rootfs specified
+	if rootfs == "" && os.Geteuid() == 0 {
 		var writer io.Writer
 		if !c.Bool("quiet") {
 			writer = os.Stderr
@@ -121,6 +116,7 @@ func CreateContainer(ctx context.Context, c *cliconfig.PodmanCommand, runtime *l
 			}
 		}
 	}
+
 	createConfig, err := ParseCreateOpts(ctx, c, runtime, imageName, data)
 	if err != nil {
 		return nil, nil, err
@@ -130,7 +126,16 @@ func CreateContainer(ctx context.Context, c *cliconfig.PodmanCommand, runtime *l
 	// at this point. The rest is done by WithOptions.
 	createConfig.HealthCheck = healthCheck
 
-	ctr, err := CreateContainerFromCreateConfig(runtime, createConfig, ctx, nil)
+	// TODO: Should be able to return this from ParseCreateOpts
+	var pod *libpod.Pod
+	if createConfig.Pod != "" {
+		pod, err = runtime.LookupPod(createConfig.Pod)
+		if err != nil {
+			return nil, nil, errors.Wrapf(err, "error looking up pod to join")
+		}
+	}
+
+	ctr, err := CreateContainerFromCreateConfig(runtime, createConfig, ctx, pod)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -146,7 +151,7 @@ func CreateContainer(ctx context.Context, c *cliconfig.PodmanCommand, runtime *l
 	return ctr, createConfig, nil
 }
 
-func parseSecurityOpt(config *cc.CreateConfig, securityOpts []string) error {
+func parseSecurityOpt(config *cc.CreateConfig, securityOpts []string, runtime *libpod.Runtime) error {
 	var (
 		labelOpts []string
 	)
@@ -154,7 +159,7 @@ func parseSecurityOpt(config *cc.CreateConfig, securityOpts []string) error {
 	if config.PidMode.IsHost() {
 		labelOpts = append(labelOpts, label.DisableSecOpt()...)
 	} else if config.PidMode.IsContainer() {
-		ctr, err := config.Runtime.LookupContainer(config.PidMode.Container())
+		ctr, err := runtime.LookupContainer(config.PidMode.Container())
 		if err != nil {
 			return errors.Wrapf(err, "container %q not found", config.PidMode.Container())
 		}
@@ -168,7 +173,7 @@ func parseSecurityOpt(config *cc.CreateConfig, securityOpts []string) error {
 	if config.IpcMode.IsHost() {
 		labelOpts = append(labelOpts, label.DisableSecOpt()...)
 	} else if config.IpcMode.IsContainer() {
-		ctr, err := config.Runtime.LookupContainer(config.IpcMode.Container())
+		ctr, err := runtime.LookupContainer(config.IpcMode.Container())
 		if err != nil {
 			return errors.Wrapf(err, "container %q not found", config.IpcMode.Container())
 		}
@@ -221,7 +226,7 @@ func parseSecurityOpt(config *cc.CreateConfig, securityOpts []string) error {
 	return nil
 }
 
-func configureEntrypoint(c *cliconfig.PodmanCommand, data *inspect.ImageData) []string {
+func configureEntrypoint(c *GenericCLIResults, data *inspect.ImageData) []string {
 	entrypoint := []string{}
 	if c.IsSet("entrypoint") {
 		// Force entrypoint to ""
@@ -241,7 +246,7 @@ func configureEntrypoint(c *cliconfig.PodmanCommand, data *inspect.ImageData) []
 	return entrypoint
 }
 
-func configurePod(c *cliconfig.PodmanCommand, runtime *libpod.Runtime, namespaces map[string]string, podName string) (map[string]string, error) {
+func configurePod(c *GenericCLIResults, runtime *libpod.Runtime, namespaces map[string]string, podName string) (map[string]string, error) {
 	pod, err := runtime.LookupPod(podName)
 	if err != nil {
 		return namespaces, err
@@ -270,16 +275,13 @@ func configurePod(c *cliconfig.PodmanCommand, runtime *libpod.Runtime, namespace
 
 // Parses CLI options related to container creation into a config which can be
 // parsed into an OCI runtime spec
-func ParseCreateOpts(ctx context.Context, c *cliconfig.PodmanCommand, runtime *libpod.Runtime, imageName string, data *inspect.ImageData) (*cc.CreateConfig, error) {
+func ParseCreateOpts(ctx context.Context, c *GenericCLIResults, runtime *libpod.Runtime, imageName string, data *inspect.ImageData) (*cc.CreateConfig, error) {
 	var (
 		inputCommand, command                                    []string
 		memoryLimit, memoryReservation, memorySwap, memoryKernel int64
 		blkioWeight                                              uint16
 		namespaces                                               map[string]string
 	)
-	if c.IsSet("restart") {
-		return nil, errors.Errorf("--restart option is not supported.\nUse systemd unit files for restarting containers")
-	}
 
 	idmappings, err := util.ParseIDMapping(c.StringSlice("uidmap"), c.StringSlice("gidmap"), c.String("subuidname"), c.String("subgidname"))
 	if err != nil {
@@ -338,29 +340,17 @@ func ParseCreateOpts(ctx context.Context, c *cliconfig.PodmanCommand, runtime *l
 		}
 		blkioWeight = uint16(u)
 	}
-	var mountList []spec.Mount
-	if mountList, err = parseMounts(c.StringArray("mount")); err != nil {
-		return nil, err
-	}
-
-	if err = parseVolumes(c.StringArray("volume")); err != nil {
-		return nil, err
-	}
-
-	if err = parseVolumesFrom(c.StringSlice("volumes-from")); err != nil {
-		return nil, err
-	}
 
 	tty := c.Bool("tty")
 
-	if c.Flag("cpu-period").Changed && c.Flag("cpus").Changed {
+	if c.Changed("cpu-period") && c.Changed("cpus") {
 		return nil, errors.Errorf("--cpu-period and --cpus cannot be set together")
 	}
-	if c.Flag("cpu-quota").Changed && c.Flag("cpus").Changed {
+	if c.Changed("cpu-quota") && c.Changed("cpus") {
 		return nil, errors.Errorf("--cpu-quota and --cpus cannot be set together")
 	}
 
-	if c.Bool("no-hosts") && c.Flag("add-host").Changed {
+	if c.Bool("no-hosts") && c.Changed("add-host") {
 		return nil, errors.Errorf("--no-hosts and --add-host cannot be set together")
 	}
 
@@ -379,7 +369,7 @@ func ParseCreateOpts(ctx context.Context, c *cliconfig.PodmanCommand, runtime *l
 	// However, that also involves setting up security opts
 	// when the pod's namespace is integrated
 	namespaceNet := c.String("network")
-	if c.Flag("net").Changed {
+	if c.Changed("net") {
 		namespaceNet = c.String("net")
 	}
 	namespaces = map[string]string{
@@ -398,16 +388,6 @@ func ParseCreateOpts(ctx context.Context, c *cliconfig.PodmanCommand, runtime *l
 	}
 	if c.IsSet("pod") {
 		if strings.HasPrefix(originalPodName, "new:") {
-			if rootless.IsRootless() {
-				// To create a new pod, we must immediately create the userns.
-				became, ret, err := rootless.BecomeRootInUserNS()
-				if err != nil {
-					return nil, err
-				}
-				if became {
-					os.Exit(ret)
-				}
-			}
 			// pod does not exist; lets make it
 			var podOptions []libpod.PodCreateOption
 			podOptions = append(podOptions, libpod.WithPodName(podName), libpod.WithInfraContainer(), libpod.WithPodCgroups())
@@ -495,17 +475,7 @@ func ParseCreateOpts(ctx context.Context, c *cliconfig.PodmanCommand, runtime *l
 	}
 
 	// ENVIRONMENT VARIABLES
-	env := defaultEnvVariables
-	if data != nil {
-		for _, e := range data.Config.Env {
-			split := strings.SplitN(e, "=", 2)
-			if len(split) > 1 {
-				env[split[0]] = split[1]
-			} else {
-				env[split[0]] = ""
-			}
-		}
-	}
+	env := EnvVariablesFromData(data)
 	if err := parse.ReadKVStrings(env, c.StringSlice("env-file"), c.StringArray("env")); err != nil {
 		return nil, errors.Wrapf(err, "unable to process environment variables")
 	}
@@ -548,7 +518,7 @@ func ParseCreateOpts(ctx context.Context, c *cliconfig.PodmanCommand, runtime *l
 
 	// WORKING DIRECTORY
 	workDir := "/"
-	if c.IsSet("workdir") || c.IsSet("w") {
+	if c.IsSet("workdir") {
 		workDir = c.String("workdir")
 	} else if data != nil && data.Config.WorkingDir != "" {
 		workDir = data.Config.WorkingDir
@@ -624,16 +594,13 @@ func ParseCreateOpts(ctx context.Context, c *cliconfig.PodmanCommand, runtime *l
 	// This is done because cobra cannot have two aliased flags. So we have to check
 	// both
 	network := c.String("network")
-	if c.Flag("net").Changed {
+	if c.Changed("net") {
 		network = c.String("net")
 	}
 
-	var memorySwappiness int64
-	if c.Flags().Lookup("memory-swappiness") != nil {
-		memorySwappiness, _ = c.Flags().GetInt64("memory-swappiness")
-	}
+	memorySwappiness := c.Int64("memory-swappiness")
+
 	config := &cc.CreateConfig{
-		Runtime:           runtime,
 		Annotations:       annotations,
 		BuiltinImgVolumes: ImageVolumes,
 		ConmonPidFile:     c.String("conmon-pidfile"),
@@ -653,8 +620,11 @@ func ParseCreateOpts(ctx context.Context, c *cliconfig.PodmanCommand, runtime *l
 		GroupAdd:    c.StringSlice("group-add"),
 		Hostname:    c.String("hostname"),
 		HostAdd:     c.StringSlice("add-host"),
+		HTTPProxy:   c.Bool("http-proxy"),
 		NoHosts:     c.Bool("no-hosts"),
 		IDMappings:  idmappings,
+		Init:        c.Bool("init"),
+		InitPath:    c.String("init-path"),
 		Image:       imageName,
 		ImageID:     imageID,
 		Interactive: c.Bool("interactive"),
@@ -679,6 +649,7 @@ func ParseCreateOpts(ctx context.Context, c *cliconfig.PodmanCommand, runtime *l
 		PortBindings:   portBindings,
 		Quiet:          c.Bool("quiet"),
 		ReadOnlyRootfs: c.Bool("read-only"),
+		ReadOnlyTmpfs:  c.Bool("read-only-tmpfs"),
 		Resources: cc.CreateResourceConfig{
 			BlkioWeight:       blkioWeight,
 			BlkioWeightDevice: c.StringSlice("blkio-weight-device"),
@@ -705,40 +676,28 @@ func ParseCreateOpts(ctx context.Context, c *cliconfig.PodmanCommand, runtime *l
 			PidsLimit:         c.Int64("pids-limit"),
 			Ulimit:            c.StringSlice("ulimit"),
 		},
-		Rm:          c.Bool("rm"),
-		StopSignal:  stopSignal,
-		StopTimeout: c.Uint("stop-timeout"),
-		Sysctl:      sysctl,
-		Systemd:     systemd,
-		Tmpfs:       c.StringSlice("tmpfs"),
-		Tty:         tty,
-		User:        user,
-		UsernsMode:  usernsMode,
-		Mounts:      mountList,
-		Volumes:     c.StringArray("volume"),
-		WorkDir:     workDir,
-		Rootfs:      rootfs,
-		VolumesFrom: c.StringSlice("volumes-from"),
-		Syslog:      c.GlobalFlags.Syslog,
-	}
-	if c.Bool("init") {
-		initPath := c.String("init-path")
-		if initPath == "" {
-			rtc, err := runtime.GetConfig()
-			if err != nil {
-				return nil, err
-			}
-			initPath = rtc.InitPath
-		}
-		if err := config.AddContainerInitBinary(initPath); err != nil {
-			return nil, err
-		}
+		RestartPolicy: c.String("restart"),
+		Rm:            c.Bool("rm"),
+		StopSignal:    stopSignal,
+		StopTimeout:   c.Uint("stop-timeout"),
+		Sysctl:        sysctl,
+		Systemd:       systemd,
+		Tmpfs:         c.StringSlice("tmpfs"),
+		Tty:           tty,
+		User:          user,
+		UsernsMode:    usernsMode,
+		MountsFlag:    c.StringArray("mount"),
+		Volumes:       c.StringArray("volume"),
+		WorkDir:       workDir,
+		Rootfs:        rootfs,
+		VolumesFrom:   c.StringSlice("volumes-from"),
+		Syslog:        c.Bool("syslog"),
 	}
 
 	if config.Privileged {
 		config.LabelOpts = label.DisableSecOpt()
 	} else {
-		if err := parseSecurityOpt(config, c.StringArray("security-opt")); err != nil {
+		if err := parseSecurityOpt(config, c.StringArray("security-opt"), runtime); err != nil {
 			return nil, err
 		}
 	}
@@ -753,92 +712,10 @@ func ParseCreateOpts(ctx context.Context, c *cliconfig.PodmanCommand, runtime *l
 	return config, nil
 }
 
-type namespace interface {
-	IsContainer() bool
-	Container() string
-}
-
-func joinOrCreateRootlessUserNamespace(createConfig *cc.CreateConfig, runtime *libpod.Runtime) (bool, int, error) {
-	if os.Geteuid() == 0 {
-		return false, 0, nil
-	}
-
-	if createConfig.Pod != "" {
-		pod, err := runtime.LookupPod(createConfig.Pod)
-		if err != nil {
-			return false, -1, err
-		}
-		inspect, err := pod.Inspect()
-		for _, ctr := range inspect.Containers {
-			prevCtr, err := runtime.LookupContainer(ctr.ID)
-			if err != nil {
-				return false, -1, err
-			}
-			s, err := prevCtr.State()
-			if err != nil {
-				return false, -1, err
-			}
-			if s != libpod.ContainerStateRunning && s != libpod.ContainerStatePaused {
-				continue
-			}
-			data, err := ioutil.ReadFile(prevCtr.Config().ConmonPidFile)
-			if err != nil {
-				return false, -1, errors.Wrapf(err, "cannot read conmon PID file %q", prevCtr.Config().ConmonPidFile)
-			}
-			conmonPid, err := strconv.Atoi(string(data))
-			if err != nil {
-				return false, -1, errors.Wrapf(err, "cannot parse PID %q", data)
-			}
-			return rootless.JoinDirectUserAndMountNS(uint(conmonPid))
-		}
-	}
-
-	namespacesStr := []string{string(createConfig.IpcMode), string(createConfig.NetMode), string(createConfig.UsernsMode), string(createConfig.PidMode), string(createConfig.UtsMode)}
-	for _, i := range namespacesStr {
-		if cc.IsNS(i) {
-			return rootless.JoinNSPath(cc.NS(i))
-		}
-	}
-
-	namespaces := []namespace{createConfig.IpcMode, createConfig.NetMode, createConfig.UsernsMode, createConfig.PidMode, createConfig.UtsMode}
-	for _, i := range namespaces {
-		if i.IsContainer() {
-			ctr, err := runtime.LookupContainer(i.Container())
-			if err != nil {
-				return false, -1, err
-			}
-			pid, err := ctr.PID()
-			if err != nil {
-				return false, -1, err
-			}
-			if pid == 0 {
-				if createConfig.Pod != "" {
-					continue
-				}
-				return false, -1, errors.Errorf("dependency container %s is not running", ctr.ID())
-			}
-			return rootless.JoinNS(uint(pid), 0)
-		}
-	}
-	return rootless.BecomeRootInUserNS()
-}
-
 func CreateContainerFromCreateConfig(r *libpod.Runtime, createConfig *cc.CreateConfig, ctx context.Context, pod *libpod.Pod) (*libpod.Container, error) {
-	runtimeSpec, err := cc.CreateConfigToOCISpec(createConfig)
+	runtimeSpec, options, err := createConfig.MakeContainerConfig(r, pod)
 	if err != nil {
 		return nil, err
-	}
-
-	options, err := createConfig.GetContainerCreateOptions(r, pod)
-	if err != nil {
-		return nil, err
-	}
-	became, ret, err := joinOrCreateRootlessUserNamespace(createConfig, r)
-	if err != nil {
-		return nil, err
-	}
-	if became {
-		os.Exit(ret)
 	}
 
 	ctr, err := r.NewContainer(ctx, runtimeSpec, options...)
@@ -861,7 +738,24 @@ var defaultEnvVariables = map[string]string{
 	"TERM": "xterm",
 }
 
-func makeHealthCheckFromCli(c *cliconfig.PodmanCommand) (*manifest.Schema2HealthConfig, error) {
+// EnvVariablesFromData gets sets the default environment variables
+// for containers, and reads the variables from the image data, if present.
+func EnvVariablesFromData(data *inspect.ImageData) map[string]string {
+	env := defaultEnvVariables
+	if data != nil {
+		for _, e := range data.Config.Env {
+			split := strings.SplitN(e, "=", 2)
+			if len(split) > 1 {
+				env[split[0]] = split[1]
+			} else {
+				env[split[0]] = ""
+			}
+		}
+	}
+	return env
+}
+
+func makeHealthCheckFromCli(c *GenericCLIResults) (*manifest.Schema2HealthConfig, error) {
 	inCommand := c.String("healthcheck-command")
 	inInterval := c.String("healthcheck-interval")
 	inRetries := c.Uint("healthcheck-retries")

@@ -24,6 +24,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			renumberCommand.InputArgs = args
 			renumberCommand.GlobalFlags = MainGlobalOpts
+			renumberCommand.Remote = remoteclient
 			return renumberCmd(&renumberCommand)
 		},
 	}
@@ -39,7 +40,7 @@ func renumberCmd(c *cliconfig.SystemRenumberValues) error {
 	// We need to pass one extra option to NewRuntime.
 	// This will inform the OCI runtime to start a renumber.
 	// That's controlled by the last argument to GetRuntime.
-	r, err := libpodruntime.GetRuntimeRenumber(&c.PodmanCommand)
+	r, err := libpodruntime.GetRuntimeRenumber(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "error renumbering locks")
 	}

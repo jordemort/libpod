@@ -9,7 +9,6 @@ import (
 
 	"github.com/containers/libpod/cmd/podman/cliconfig"
 	"github.com/containers/libpod/libpod"
-	"github.com/containers/libpod/pkg/rootless"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -29,6 +28,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			podTopCommand.InputArgs = args
 			podTopCommand.GlobalFlags = MainGlobalOpts
+			podTopCommand.Remote = remoteclient
 			return podTopCmd(&podTopCommand)
 		},
 		Example: `podman top ctrID
@@ -54,10 +54,6 @@ func podTopCmd(c *cliconfig.PodTopValues) error {
 	)
 	args := c.InputArgs
 
-	if os.Geteuid() != 0 {
-		rootless.SetSkipStorageSetup(true)
-	}
-
 	if c.ListDescriptors {
 		descriptors, err := libpod.GetContainerPidInformationDescriptors()
 		if err != nil {
@@ -71,7 +67,7 @@ func podTopCmd(c *cliconfig.PodTopValues) error {
 		return errors.Errorf("you must provide the name or id of a running pod")
 	}
 
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "error creating libpod runtime")
 	}
@@ -81,26 +77,6 @@ func podTopCmd(c *cliconfig.PodTopValues) error {
 		descriptors = args
 	} else {
 		descriptors = args[1:]
-	}
-
-	if os.Geteuid() != 0 {
-		var pod *adapter.Pod
-		var err error
-		if c.Latest {
-			pod, err = runtime.GetLatestPod()
-		} else {
-			pod, err = runtime.LookupPod(c.InputArgs[0])
-		}
-		if err != nil {
-			return errors.Wrapf(err, "unable to lookup requested container")
-		}
-		became, ret, err := runtime.JoinOrCreateRootlessPod(pod)
-		if err != nil {
-			return err
-		}
-		if became {
-			os.Exit(ret)
-		}
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 5, 1, 3, ' ', 0)

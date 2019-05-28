@@ -5,6 +5,7 @@ package adapter
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	v1 "k8s.io/api/core/v1"
 
 	"github.com/containers/buildah/imagebuildah"
 	"github.com/containers/image/docker/reference"
@@ -36,6 +39,7 @@ type RemoteImageRuntime struct{}
 type RemoteRuntime struct {
 	Conn   *varlink.Connection
 	Remote bool
+	cmd    cliconfig.MainFlags
 }
 
 // LocalRuntime describes a typical libpod runtime
@@ -44,18 +48,18 @@ type LocalRuntime struct {
 }
 
 // GetRuntime returns a LocalRuntime struct with the actual runtime embedded in it
-func GetRuntime(c *cliconfig.PodmanCommand) (*LocalRuntime, error) {
-	runtime := RemoteRuntime{}
+func GetRuntime(ctx context.Context, c *cliconfig.PodmanCommand) (*LocalRuntime, error) {
+	runtime := RemoteRuntime{
+		Remote: true,
+		cmd:    c.GlobalFlags,
+	}
 	conn, err := runtime.Connect()
 	if err != nil {
 		return nil, err
 	}
-
+	runtime.Conn = conn
 	return &LocalRuntime{
-		&RemoteRuntime{
-			Conn:   conn,
-			Remote: true,
-		},
+		&runtime,
 	}, nil
 }
 
@@ -82,6 +86,7 @@ type remoteImage struct {
 	Digest      digest.Digest
 	isParent    bool
 	Runtime     *LocalRuntime
+	TopLayer    string
 }
 
 // Container ...
@@ -94,6 +99,18 @@ type remoteContainer struct {
 	Runtime *LocalRuntime
 	config  *libpod.ContainerConfig
 	state   *libpod.ContainerState
+}
+
+// Pod ...
+type Pod struct {
+	remotepod
+}
+
+type remotepod struct {
+	config     *libpod.PodConfig
+	state      *libpod.PodInspectState
+	containers []libpod.PodContainerInfo
+	Runtime    *LocalRuntime
 }
 
 type VolumeFilter func(*Volume) bool
@@ -147,6 +164,7 @@ func imageInListToContainerImage(i iopodman.Image, name string, runtime *LocalRu
 		Names:       i.RepoTags,
 		isParent:    i.IsParent,
 		Runtime:     runtime,
+		TopLayer:    i.TopLayer,
 	}
 	return &ContainerImage{ri}, nil
 }
@@ -240,7 +258,7 @@ func (r *LocalRuntime) New(ctx context.Context, name, signaturePolicyPath, authf
 // IsParent goes through the layers in the store and checks if i.TopLayer is
 // the parent of any other layer in store. Double check that image with that
 // layer exists as well.
-func (ci *ContainerImage) IsParent() (bool, error) {
+func (ci *ContainerImage) IsParent(context.Context) (bool, error) {
 	return ci.remoteImage.isParent, nil
 }
 
@@ -280,6 +298,11 @@ func (ci *ContainerImage) Dangling() bool {
 	return len(ci.Names()) == 0
 }
 
+// TopLayer returns an images top layer as a string
+func (ci *ContainerImage) TopLayer() string {
+	return ci.remoteImage.TopLayer
+}
+
 // TagImage ...
 func (ci *ContainerImage) TagImage(tag string) error {
 	_, err := iopodman.TagImage().Call(ci.Runtime.Conn, ci.ID(), tag)
@@ -317,7 +340,7 @@ func (ci *ContainerImage) History(ctx context.Context) ([]*image.History, error)
 }
 
 // PruneImages is the wrapper call for a remote-client to prune images
-func (r *LocalRuntime) PruneImages(all bool) ([]string, error) {
+func (r *LocalRuntime) PruneImages(ctx context.Context, all bool) ([]string, error) {
 	return iopodman.ImagesPrune().Call(r.Conn, all)
 }
 
@@ -393,19 +416,19 @@ func (r *LocalRuntime) Build(ctx context.Context, c *cliconfig.BuildValues, opti
 		Compression:           string(options.Compression),
 		DefaultsMountFilePath: options.DefaultMountsFilePath,
 		Dockerfiles:           dockerfiles,
-		//Err: string(options.Err),
+		// Err: string(options.Err),
 		ForceRmIntermediateCtrs: options.ForceRmIntermediateCtrs,
 		Iidfile:                 options.IIDFile,
 		Label:                   options.Labels,
 		Layers:                  options.Layers,
 		Nocache:                 options.NoCache,
-		//Out:
+		// Out:
 		Output:                 options.Output,
 		OutputFormat:           options.OutputFormat,
 		PullPolicy:             options.PullPolicy.String(),
 		Quiet:                  options.Quiet,
 		RemoteIntermediateCtrs: options.RemoveIntermediateCtrs,
-		//ReportWriter:
+		// ReportWriter:
 		RuntimeArgs:         options.RuntimeArgs,
 		SignaturePolicyPath: options.SignaturePolicyPath,
 		Squash:              options.Squash,
@@ -589,7 +612,7 @@ func (r *LocalRuntime) InspectVolumes(ctx context.Context, c *cliconfig.VolumeIn
 	return varlinkVolumeToVolume(r, reply), nil
 }
 
-//Volumes returns a slice of adapter.volumes based on information about libpod
+// Volumes returns a slice of adapter.volumes based on information about libpod
 // volumes over a varlink connection
 func (r *LocalRuntime) Volumes(ctx context.Context) ([]*Volume, error) {
 	reply, err := iopodman.GetVolumes().Call(r.Conn, []string{}, true)
@@ -755,13 +778,6 @@ func (r *LocalRuntime) HealthCheck(c *cliconfig.HealthCheckValues) (libpod.Healt
 	return -1, libpod.ErrNotImplemented
 }
 
-// JoinOrCreateRootlessPod joins the specified pod if it is running or it creates a new user namespace
-// if the pod is stopped
-func (r *LocalRuntime) JoinOrCreateRootlessPod(pod *Pod) (bool, int, error) {
-	// Nothing to do in the remote case
-	return true, 0, nil
-}
-
 // Events monitors libpod/podman events over a varlink connection
 func (r *LocalRuntime) Events(c *cliconfig.EventValues) error {
 	var more uint64
@@ -830,4 +846,91 @@ func (r *LocalRuntime) Events(c *cliconfig.EventValues) error {
 		}
 	}
 	return nil
+}
+
+// Diff ...
+func (r *LocalRuntime) Diff(c *cliconfig.DiffValues, to string) ([]archive.Change, error) {
+	var changes []archive.Change
+	reply, err := iopodman.Diff().Call(r.Conn, to)
+	if err != nil {
+		return nil, err
+	}
+	for _, change := range reply {
+		changes = append(changes, archive.Change{Path: change.Path, Kind: stringToChangeType(change.ChangeType)})
+	}
+	return changes, nil
+}
+
+func stringToChangeType(change string) archive.ChangeType {
+	switch change {
+	case "A":
+		return archive.ChangeAdd
+	case "D":
+		return archive.ChangeDelete
+	default:
+		logrus.Errorf("'%s' is unknown archive type", change)
+		fallthrough
+	case "C":
+		return archive.ChangeModify
+	}
+}
+
+// GenerateKube creates kubernetes email from containers and pods
+func (r *LocalRuntime) GenerateKube(c *cliconfig.GenerateKubeValues) (*v1.Pod, *v1.Service, error) {
+	var (
+		pod     v1.Pod
+		service v1.Service
+	)
+	reply, err := iopodman.GenerateKube().Call(r.Conn, c.InputArgs[0], c.Service)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "unable to create kubernetes YAML")
+	}
+	if err := json.Unmarshal([]byte(reply.Pod), &pod); err != nil {
+		return nil, nil, err
+	}
+	err = json.Unmarshal([]byte(reply.Service), &service)
+	return &pod, &service, err
+}
+
+// GetContainersByContext looks up containers based on the cli input of all, latest, or a list
+func (r *LocalRuntime) GetContainersByContext(all bool, latest bool, namesOrIDs []string) ([]*Container, error) {
+	var containers []*Container
+	cids, err := iopodman.GetContainersByContext().Call(r.Conn, all, latest, namesOrIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, cid := range cids {
+		ctr, err := r.LookupContainer(cid)
+		if err != nil {
+			return nil, err
+		}
+		containers = append(containers, ctr)
+	}
+	return containers, nil
+}
+
+// GetVersion returns version information from service
+func (r *LocalRuntime) GetVersion() (libpod.Version, error) {
+	version, goVersion, gitCommit, built, osArch, apiVersion, err := iopodman.GetVersion().Call(r.Conn)
+	if err != nil {
+		return libpod.Version{}, errors.Wrapf(err, "Unable to obtain server version information")
+	}
+
+	var buildTime int64
+	if built != "" {
+		t, err := time.Parse(time.RFC3339, built)
+		if err != nil {
+			return libpod.Version{}, nil
+		}
+		buildTime = t.Unix()
+	}
+
+	return libpod.Version{
+		RemoteAPIVersion: apiVersion,
+		Version:          version,
+		GoVersion:        goVersion,
+		GitCommit:        gitCommit,
+		Built:            buildTime,
+		OsArch:           osArch,
+	}, nil
 }

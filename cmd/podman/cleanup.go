@@ -1,11 +1,8 @@
 package main
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/containers/libpod/cmd/podman/cliconfig"
-	"github.com/containers/libpod/cmd/podman/libpodruntime"
+	"github.com/containers/libpod/pkg/adapter"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -24,6 +21,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cleanupCommand.InputArgs = args
 			cleanupCommand.GlobalFlags = MainGlobalOpts
+			cleanupCommand.Remote = remoteclient
 			return cleanupCmd(&cleanupCommand)
 		},
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -48,38 +46,16 @@ func init() {
 }
 
 func cleanupCmd(c *cliconfig.CleanupValues) error {
-	runtime, err := libpodruntime.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}
 	defer runtime.Shutdown(false)
 
-	cleanupContainers, lastError := getAllOrLatestContainers(&c.PodmanCommand, runtime, -1, "all")
-
-	ctx := getContext()
-
-	for _, ctr := range cleanupContainers {
-		hadError := false
-		if c.Remove {
-			if err := runtime.RemoveContainer(ctx, ctr, false, true); err != nil {
-				if lastError != nil {
-					fmt.Fprintln(os.Stderr, lastError)
-				}
-				lastError = errors.Wrapf(err, "failed to cleanup and remove container %v", ctr.ID())
-				hadError = true
-			}
-		} else {
-			if err := ctr.Cleanup(ctx); err != nil {
-				if lastError != nil {
-					fmt.Fprintln(os.Stderr, lastError)
-				}
-				lastError = errors.Wrapf(err, "failed to cleanup container %v", ctr.ID())
-				hadError = true
-			}
-		}
-		if !hadError {
-			fmt.Println(ctr.ID())
-		}
+	ok, failures, err := runtime.CleanupContainers(getContext(), c)
+	if err != nil {
+		return err
 	}
-	return lastError
+
+	return printCmdResults(ok, failures)
 }

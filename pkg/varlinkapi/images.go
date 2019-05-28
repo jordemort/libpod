@@ -1,7 +1,10 @@
+// +build varlink
+
 package varlinkapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -47,7 +50,7 @@ func (i *LibpodAPI) ListImages(call iopodman.VarlinkCall) error {
 		}
 
 		size, _ := image.Size(getContext())
-		isParent, err := image.IsParent()
+		isParent, err := image.IsParent(context.TODO())
 		if err != nil {
 			return call.ReplyErrorOccurred(err.Error())
 		}
@@ -103,6 +106,7 @@ func (i *LibpodAPI) GetImage(call iopodman.VarlinkCall, id string) error {
 		VirtualSize: newImage.VirtualSize,
 		Containers:  int64(len(containers)),
 		Labels:      labels,
+		TopLayer:    newImage.TopLayer(),
 	}
 	return call.ReplyGetImage(il)
 }
@@ -500,7 +504,7 @@ func (i *LibpodAPI) DeleteUnusedImages(call iopodman.VarlinkCall) error {
 			return call.ReplyErrorOccurred(err.Error())
 		}
 		if len(containers) == 0 {
-			if err := img.Remove(false); err != nil {
+			if err := img.Remove(context.TODO(), false); err != nil {
 				return call.ReplyErrorOccurred(err.Error())
 			}
 			deletedImages = append(deletedImages, img.ID())
@@ -625,7 +629,6 @@ func (i *LibpodAPI) PullImage(call iopodman.VarlinkCall, name string, certDir, c
 	output := bytes.NewBuffer([]byte{})
 	c := make(chan error)
 	go func() {
-		//err := newImage.PushImageToHeuristicDestination(getContext(), destname, manifestType, "", signaturePolicy, output, compress, so, &dockerRegistryOptions, nil)
 		if strings.HasPrefix(name, dockerarchive.Transport.Name()+":") {
 			srcRef, err := alltransports.ParseImageName(name)
 			if err != nil {
@@ -634,14 +637,16 @@ func (i *LibpodAPI) PullImage(call iopodman.VarlinkCall, name string, certDir, c
 			newImage, err := i.Runtime.ImageRuntime().LoadFromArchiveReference(getContext(), srcRef, signaturePolicy, output)
 			if err != nil {
 				c <- errors.Wrapf(err, "error pulling image from %q", name)
+			} else {
+				imageID = newImage[0].ID()
 			}
-			imageID = newImage[0].ID()
 		} else {
 			newImage, err := i.Runtime.ImageRuntime().New(getContext(), name, signaturePolicy, "", output, &dockerRegistryOptions, so, false, nil)
 			if err != nil {
 				c <- errors.Wrapf(err, "unable to pull %s", name)
+			} else {
+				imageID = newImage.ID()
 			}
-			imageID = newImage.ID()
 		}
 		c <- nil
 		close(c)
@@ -723,7 +728,7 @@ func (i *LibpodAPI) ContainerRunlabel(call iopodman.VarlinkCall, input iopodman.
 		return call.ReplyErrorOccurred(fmt.Sprintf("%s does not contain the label %s", input.Image, input.Label))
 	}
 
-	cmd, env, err := shared.GenerateRunlabelCommand(runLabel, imageName, input.Name, input.Opts, input.ExtraArgs)
+	cmd, env, err := shared.GenerateRunlabelCommand(runLabel, imageName, input.Name, input.Opts, input.ExtraArgs, "")
 	if err != nil {
 		return call.ReplyErrorOccurred(err.Error())
 	}
@@ -735,7 +740,7 @@ func (i *LibpodAPI) ContainerRunlabel(call iopodman.VarlinkCall, input iopodman.
 
 // ImagesPrune ....
 func (i *LibpodAPI) ImagesPrune(call iopodman.VarlinkCall, all bool) error {
-	prunedImages, err := i.Runtime.ImageRuntime().PruneImages(all)
+	prunedImages, err := i.Runtime.ImageRuntime().PruneImages(context.TODO(), all)
 	if err != nil {
 		return call.ReplyErrorOccurred(err.Error())
 	}
@@ -909,4 +914,54 @@ func (i *LibpodAPI) LoadImage(call iopodman.VarlinkCall, name, inputFile string,
 		}
 	}
 	return call.ReplyLoadImage(br)
+}
+
+// Diff ...
+func (i *LibpodAPI) Diff(call iopodman.VarlinkCall, name string) error {
+	var response []iopodman.DiffInfo
+	changes, err := i.Runtime.GetDiff("", name)
+	if err != nil {
+		return call.ReplyErrorOccurred(err.Error())
+	}
+	for _, change := range changes {
+		response = append(response, iopodman.DiffInfo{Path: change.Path, ChangeType: change.Kind.String()})
+	}
+	return call.ReplyDiff(response)
+}
+
+// GetLayersMapWithImageInfo is a development only endpoint to obtain layer information for an image.
+func (i *LibpodAPI) GetLayersMapWithImageInfo(call iopodman.VarlinkCall) error {
+	layerInfo, err := image.GetLayersMapWithImageInfo(i.Runtime.ImageRuntime())
+	if err != nil {
+		return call.ReplyErrorOccurred(err.Error())
+	}
+	b, err := json.Marshal(layerInfo)
+	if err != nil {
+		return call.ReplyErrorOccurred(err.Error())
+	}
+	return call.ReplyGetLayersMapWithImageInfo(string(b))
+}
+
+// BuildImageHierarchyMap ...
+func (i *LibpodAPI) BuildImageHierarchyMap(call iopodman.VarlinkCall, name string) error {
+	img, err := i.Runtime.ImageRuntime().NewFromLocal(name)
+	if err != nil {
+		return call.ReplyErrorOccurred(err.Error())
+	}
+	imageInfo := &image.InfoImage{
+		ID:   img.ID(),
+		Tags: img.Names(),
+	}
+	layerInfo, err := image.GetLayersMapWithImageInfo(i.Runtime.ImageRuntime())
+	if err != nil {
+		return call.ReplyErrorOccurred(err.Error())
+	}
+	if err := image.BuildImageHierarchyMap(imageInfo, layerInfo, img.TopLayer()); err != nil {
+		return call.ReplyErrorOccurred(err.Error())
+	}
+	b, err := json.Marshal(imageInfo)
+	if err != nil {
+		return call.ReplyErrorOccurred(err.Error())
+	}
+	return call.ReplyBuildImageHierarchyMap(string(b))
 }

@@ -27,6 +27,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			loadCommand.InputArgs = args
 			loadCommand.GlobalFlags = MainGlobalOpts
+			loadCommand.Remote = remoteclient
 			return loadCmd(&loadCommand)
 		},
 	}
@@ -57,7 +58,7 @@ func loadCmd(c *cliconfig.LoadValues) error {
 		return errors.New("too many arguments. Requires exactly 1")
 	}
 
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}

@@ -14,25 +14,14 @@ import (
 	"github.com/containers/libpod/libpod"
 	"github.com/containers/libpod/pkg/varlinkapi"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
-
-// Pod ...
-type Pod struct {
-	remotepod
-}
 
 // PodContainerStats is struct containing an adapter Pod and a libpod
 // ContainerStats and is used primarily for outputing pod stats.
 type PodContainerStats struct {
 	Pod            *Pod
 	ContainerStats map[string]*libpod.ContainerStats
-}
-
-type remotepod struct {
-	config     *libpod.PodConfig
-	state      *libpod.PodInspectState
-	containers []libpod.PodContainerInfo
-	Runtime    *LocalRuntime
 }
 
 // RemovePods removes one or more based on the cli context.
@@ -183,11 +172,15 @@ func (r *LocalRuntime) StartPods(ctx context.Context, cli *cliconfig.PodStartVal
 
 // CreatePod creates a pod for the remote client over a varlink connection
 func (r *LocalRuntime) CreatePod(ctx context.Context, cli *cliconfig.PodCreateValues, labels map[string]string) (string, error) {
+	var share []string
+	if cli.Share != "" {
+		share = strings.Split(cli.Share, ",")
+	}
 	pc := iopodman.PodCreate{
 		Name:         cli.Name,
 		CgroupParent: cli.CgroupParent,
 		Labels:       labels,
-		Share:        strings.Split(cli.Share, ","),
+		Share:        share,
 		Infra:        cli.Infra,
 		InfraCommand: cli.InfraCommand,
 		InfraImage:   cli.InfraCommand,
@@ -204,6 +197,23 @@ func (r *LocalRuntime) GetAllPods() ([]*Pod, error) {
 	if err != nil {
 		return nil, err
 	}
+	for _, p := range podIDs {
+		pod, err := r.LookupPod(p)
+		if err != nil {
+			return nil, err
+		}
+		pods = append(pods, pod)
+	}
+	return pods, nil
+}
+
+// GetPodsByStatus returns a slice of pods filtered by a libpod status
+func (r *LocalRuntime) GetPodsByStatus(statuses []string) ([]*Pod, error) {
+	podIDs, err := iopodman.GetPodsByStatus().Call(r.Conn, statuses)
+	if err != nil {
+		return nil, err
+	}
+	pods := make([]*Pod, 0, len(podIDs))
 	for _, p := range podIDs {
 		pod, err := r.LookupPod(p)
 		if err != nil {
@@ -507,4 +517,49 @@ func (p *Pod) GetPodStats(previousContainerStats map[string]*libpod.ContainerSta
 		}
 	}
 	return newContainerStats, nil
+}
+
+// RemovePod removes a pod
+// If removeCtrs is specified, containers will be removed
+// Otherwise, a pod that is not empty will return an error and not be removed
+// If force is specified with removeCtrs, all containers will be stopped before
+// being removed
+// Otherwise, the pod will not be removed if any containers are running
+func (r *LocalRuntime) RemovePod(ctx context.Context, p *Pod, removeCtrs, force bool) error {
+	_, err := iopodman.RemovePod().Call(r.Conn, p.ID(), force)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// PrunePods...
+func (r *LocalRuntime) PrunePods(ctx context.Context, cli *cliconfig.PodPruneValues) ([]string, map[string]error, error) {
+	var (
+		ok       = []string{}
+		failures = map[string]error{}
+	)
+	states := []string{shared.PodStateStopped, shared.PodStateExited}
+	if cli.Force {
+		states = append(states, shared.PodStateRunning)
+	}
+
+	ids, err := iopodman.GetPodsByStatus().Call(r.Conn, states)
+	if err != nil {
+		return ok, failures, err
+	}
+	if len(ids) < 1 {
+		return ok, failures, nil
+	}
+
+	for _, id := range ids {
+		_, err := iopodman.RemovePod().Call(r.Conn, id, cli.Force)
+		if err != nil {
+			logrus.Debugf("Failed to remove pod %s: %s", id, err.Error())
+			failures[id] = err
+		} else {
+			ok = append(ok, id)
+		}
+	}
+	return ok, failures, nil
 }

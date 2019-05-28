@@ -21,6 +21,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rmiCommand.InputArgs = args
 			rmiCommand.GlobalFlags = MainGlobalOpts
+			rmiCommand.Remote = remoteclient
 			return rmiCmd(&rmiCommand)
 		},
 		Example: `podman rmi imageID
@@ -50,7 +51,7 @@ func rmiCmd(c *cliconfig.RmiValues) error {
 
 	ctx := getContext()
 	removeAll := c.All
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}
@@ -96,7 +97,7 @@ func rmiCmd(c *cliconfig.RmiValues) error {
 				return errors.New("unable to delete all images; re-run the rmi command again.")
 			}
 			for _, i := range imagesToDelete {
-				isParent, err := i.IsParent()
+				isParent, err := i.IsParent(ctx)
 				if err != nil {
 					return err
 				}

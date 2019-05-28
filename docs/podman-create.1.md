@@ -259,22 +259,29 @@ The following example maps uids 0-2000 in the container to the uids 30000-31999 
 
 Add additional groups to run as
 
-**--healthchech**=""
+**--healthcheck**=""
 
-Set or alter a healthcheck for a container.  The value must be of the format of:
+Set or alter a healthcheck command for a container. The command is a command to be executed inside your
+container that determines your container health.  The command is required for other healthcheck options
+to be applied.  A value of `none` disables existing healthchecks.
 
- `[OPTIONS] CMD command`
+**--healthcheck-interval**=""
 
- where options can be any of the follow:
- * --interval=DURATION (default: 30s)
- * --timeout=DURATION (default: 30s)
- * --start-period=DURATION (default: 0s)
- * --retries=N (default: 3)
+Set an interval for the healthchecks (a value of `disable` results in no automatic timer setup) (default "30s")
 
-Note: options are *not* required.
+**--healthcheck-retries=**
 
-The command is a command to be executed inside your container that determines your container health.  The
-command is required.
+The number of retries allowed before a healthcheck is considered to be unhealthy.  The default value is `3`.
+
+**--healthcheck-start-period**=""
+
+The initialization time needed for a container to bootstrap. The value can be expressed in time format like
+`2m3s`.  The default value is `0s`
+
+**--healthcheck-timeout**=""
+
+The maximum time allowed to complete the healthcheck before an interval is considered failed.  Like start-period, the
+value can be expressed in a time format such as `1m22s`.  The default value is `30s`.
 
 **--hostname**=""
 
@@ -285,6 +292,26 @@ Sets the container host name that is available inside the container.
 **--help**
 
 Print usage statement
+
+**--http-proxy**=*true*|*false*
+
+By default proxy environment variables are passed into the container if set
+for the podman process.  This can be disabled by setting the `--http-proxy`
+option to `false`.  The environment variables passed in include `http_proxy`,
+`https_proxy`, `ftp_proxy`, `no_proxy`, and also the upper case versions of
+those.  This option is only needed when the host system must use a proxy but
+the container should not use any proxy.  Proxy environment variables specified
+for the container in any other way will override the values that would have
+been passed thru from the host.  (Other ways to specify the proxy for the
+container include passing the values with the `--env` flag, or hardcoding the
+proxy environment at container build time.)
+
+For example, to disable passing these environment variables from host to
+container:
+
+`--http-proxy=false`
+
+Defaults to `true`
 
 **--image-volume**, **builtin-volume**=*bind*|*tmpfs*|*ignore*
 
@@ -542,13 +569,22 @@ By default a container will have its root filesystem writable allowing processes
 to write files anywhere.  By specifying the `--read-only` flag the container will have
 its root filesystem mounted as read only prohibiting any writes.
 
+**--read-only-tmpfs**=*true*|*false*
+If container is running in --read-only mode, then mount a read-write tmpfs on /run, /tmp, and /var/tmp.  The default is *true*
+
 **--restart=""**
 
-Not implemented.
+Restart policy to follow when containers exit.
+Restart policy will not take effect if a container is stopped via the `podman kill` or `podman stop` commands.
+Valid values are:
 
-Restart should be handled via a systemd unit files. Please add your podman
-commands to a unit file and allow systemd or your init system to handle the
-restarting of the container processes.  See example below.
+- `no`                       : Do not restart containers on exit
+- `on-failure[:max_retries]` : Restart containers when they exit with a non-0 exit code, retrying indefinitely or until the optional max_retries count is hit
+- `always`                   : Restart containers when they exit, regardless of status, retrying indefinitely
+
+Please note that restart will not restart containers after a system reboot.
+If this functionality is required in your environment, you can invoke Podman from a systemd unit file, or create an init script for whichever init system is in use.
+To generate systemd unit files, please see *podman generate systemd*
 
 **--rm**=*true*|*false*
 
@@ -556,7 +592,7 @@ Automatically remove the container when it exits. The default is *false*.
 
 Note that the container will not be removed when it could not be created or
 started successfully. This allows the user to inspect the container after
-failure. The `--rm` flag is incompatible with the `-d` flag.
+failure.
 
 **--rootfs**
 
@@ -834,21 +870,6 @@ the uids and gids from the host.
 
 ```
 $ podman create --uidmap 0:30000:7000 --gidmap 0:30000:7000 fedora echo hello
-```
-
-### Running a podman container to restart inside of a systemd unit file
-
-
-```
-[Unit]
-Description=My App
-[Service]
-Restart=always
-ExecStart=/usr/bin/podman start -a my_app
-ExecStop=/usr/bin/podman stop -t 10 my_app
-KillMode=process
-[Install]
-WantedBy=multi-user.target
 ```
 
 ### Rootless Containers

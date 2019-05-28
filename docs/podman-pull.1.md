@@ -49,6 +49,8 @@ Image stored in local container/storage
 
 All tagged images in the repository will be pulled.
 
+Note: When using the all-tags flag, Podman will not iterate over the search registries in the containers-registries.conf(5) but will always use docker.io for unqualified image names.
+
 **--authfile**
 
 Path of the authentication file. Default is ${XDG_RUNTIME\_DIR}/containers/auth.json, which is set using `podman login`.
@@ -146,7 +148,7 @@ Storing signatures
 	registries.conf is the configuration file which specifies which container registries should be consulted when completing image names which do not include a registry or domain portion.
 
 ## SEE ALSO
-podman(1), podman-push(1), podman-login(1), containers-registries.conf(5), crio(8)
+podman(1), podman-push(1), podman-login(1), containers-registries.conf(5)
 
 ## HISTORY
 July 2017, Originally compiled by Urvashi Mohnani <umohnani@redhat.com>

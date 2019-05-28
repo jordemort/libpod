@@ -22,6 +22,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			podUnpauseCommand.InputArgs = args
 			podUnpauseCommand.GlobalFlags = MainGlobalOpts
+			podUnpauseCommand.Remote = remoteclient
 			return podUnpauseCmd(&podUnpauseCommand)
 		},
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -45,7 +46,7 @@ func init() {
 
 func podUnpauseCmd(c *cliconfig.PodUnpauseValues) error {
 	var lastError error
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "error creating libpod runtime")
 	}

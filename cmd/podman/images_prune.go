@@ -22,6 +22,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pruneImagesCommand.InputArgs = args
 			pruneImagesCommand.GlobalFlags = MainGlobalOpts
+			pruneImagesCommand.Remote = remoteclient
 			return pruneImagesCmd(&pruneImagesCommand)
 		},
 	}
@@ -36,7 +37,7 @@ func init() {
 }
 
 func pruneImagesCmd(c *cliconfig.PruneImagesValues) error {
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}
@@ -44,7 +45,7 @@ func pruneImagesCmd(c *cliconfig.PruneImagesValues) error {
 
 	// Call prune; if any cids are returned, print them and then
 	// return err in case an error also came up
-	pruneCids, err := runtime.PruneImages(c.All)
+	pruneCids, err := runtime.PruneImages(getContext(), c.All)
 	if len(pruneCids) > 0 {
 		for _, cid := range pruneCids {
 			fmt.Println(cid)

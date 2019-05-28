@@ -127,6 +127,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			podPsCommand.InputArgs = args
 			podPsCommand.GlobalFlags = MainGlobalOpts
+			podPsCommand.Remote = remoteclient
 			return podPsCmd(&podPsCommand)
 		},
 	}
@@ -156,7 +157,7 @@ func podPsCmd(c *cliconfig.PodPsValues) error {
 		return errors.Wrapf(err, "error with flags passed")
 	}
 
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "error creating libpod runtime")
 	}

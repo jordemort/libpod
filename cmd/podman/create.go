@@ -2,12 +2,9 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/containers/libpod/cmd/podman/cliconfig"
-	"github.com/containers/libpod/cmd/podman/libpodruntime"
-	"github.com/containers/libpod/cmd/podman/shared"
-	"github.com/containers/libpod/pkg/rootless"
+	"github.com/containers/libpod/pkg/adapter"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -25,6 +22,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			createCommand.InputArgs = args
 			createCommand.GlobalFlags = MainGlobalOpts
+			createCommand.Remote = remoteclient
 			return createCmd(&createCommand)
 		},
 		Example: `podman create alpine ls
@@ -54,27 +52,22 @@ func createCmd(c *cliconfig.CreateValues) error {
 		return err
 	}
 
-	if os.Geteuid() != 0 {
-		rootless.SetSkipStorageSetup(true)
-	}
-
-	runtime, err := libpodruntime.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "error creating libpod runtime")
 	}
 	defer runtime.Shutdown(false)
 
-	ctr, _, err := shared.CreateContainer(getContext(), &c.PodmanCommand, runtime)
+	cid, err := runtime.CreateContainer(getContext(), c)
 	if err != nil {
 		return err
 	}
-
-	fmt.Printf("%s\n", ctr.ID())
+	fmt.Printf("%s\n", cid)
 	return nil
 }
 
 func createInit(c *cliconfig.PodmanCommand) error {
-	if c.Bool("trace") {
+	if !remote && c.Bool("trace") {
 		span, _ := opentracing.StartSpanFromContext(Ctx, "createInit")
 		defer span.Finish()
 	}

@@ -39,6 +39,7 @@ var (
 			buildCommand.FromAndBudResults = &fromAndBudValues
 			buildCommand.LayerResults = &layerValues
 			buildCommand.NameSpaceResults = &namespaceValues
+			buildCommand.Remote = remoteclient
 			return buildCmd(&buildCommand)
 		},
 		Example: `podman build .
@@ -205,7 +206,7 @@ func buildCmd(c *cliconfig.BuildValues) error {
 		dockerfiles = append(dockerfiles, filepath.Join(contextDir, "Dockerfile"))
 	}
 
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}
@@ -266,7 +267,7 @@ func buildCmd(c *cliconfig.BuildValues) error {
 		MemorySwap:   memorySwap,
 		ShmSize:      c.ShmSize,
 		Ulimit:       c.Ulimit,
-		Volumes:      c.Volume,
+		Volumes:      c.Volumes,
 	}
 
 	options := imagebuildah.BuildOptions{

@@ -6,18 +6,26 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/containers/libpod/cmd/podman/cliconfig"
 	"github.com/containers/libpod/cmd/podman/shared"
-	"github.com/containers/libpod/cmd/podman/varlink"
+	iopodman "github.com/containers/libpod/cmd/podman/varlink"
 	"github.com/containers/libpod/libpod"
 	"github.com/containers/libpod/pkg/inspect"
+	"github.com/containers/libpod/pkg/varlinkapi/virtwriter"
+	"github.com/cri-o/ocicni/pkg/ocicni"
+	"github.com/docker/docker/pkg/term"
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/varlink/go/varlink"
+	"golang.org/x/crypto/ssh/terminal"
+	"k8s.io/client-go/tools/remotecommand"
 )
 
 // Inspect returns an inspect struct from varlink
@@ -36,6 +44,37 @@ func (c *Container) Inspect(size bool) (*inspect.ContainerInspectData, error) {
 // ID returns the ID of the container
 func (c *Container) ID() string {
 	return c.config.ID
+}
+
+// Restart a single container
+func (c *Container) Restart(timeout int64) error {
+	_, err := iopodman.RestartContainer().Call(c.Runtime.Conn, c.ID(), timeout)
+	return err
+}
+
+// Pause a container
+func (c *Container) Pause() error {
+	_, err := iopodman.PauseContainer().Call(c.Runtime.Conn, c.ID())
+	return err
+}
+
+// Unpause a container
+func (c *Container) Unpause() error {
+	_, err := iopodman.UnpauseContainer().Call(c.Runtime.Conn, c.ID())
+	return err
+}
+
+func (c *Container) PortMappings() ([]ocicni.PortMapping, error) {
+	// First check if the container belongs to a network namespace (like a pod)
+	// Taken from libpod portmappings()
+	if len(c.config.NetNsCtr) > 0 {
+		netNsCtr, err := c.Runtime.LookupContainer(c.config.NetNsCtr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "unable to lookup network namespace for container %s", c.ID())
+		}
+		return netNsCtr.PortMappings()
+	}
+	return c.config.PortMappings, nil
 }
 
 // Config returns a container config
@@ -70,6 +109,32 @@ func (r *LocalRuntime) ContainerState(name string) (*libpod.ContainerState, erro
 
 }
 
+// Spec obtains the container spec.
+func (r *LocalRuntime) Spec(name string) (*specs.Spec, error) {
+	reply, err := iopodman.Spec().Call(r.Conn, name)
+	if err != nil {
+		return nil, err
+	}
+	data := specs.Spec{}
+	if err := json.Unmarshal([]byte(reply), &data); err != nil {
+		return nil, err
+	}
+	return &data, nil
+}
+
+// LookupContainers is a wrapper for LookupContainer
+func (r *LocalRuntime) LookupContainers(idsOrNames []string) ([]*Container, error) {
+	var containers []*Container
+	for _, name := range idsOrNames {
+		ctr, err := r.LookupContainer(name)
+		if err != nil {
+			return nil, err
+		}
+		containers = append(containers, ctr)
+	}
+	return containers, nil
+}
+
 // LookupContainer gets basic information about container over a varlink
 // connection and then translates it to a *Container
 func (r *LocalRuntime) LookupContainer(idOrName string) (*Container, error) {
@@ -78,10 +143,6 @@ func (r *LocalRuntime) LookupContainer(idOrName string) (*Container, error) {
 		return nil, err
 	}
 	config := r.Config(idOrName)
-	if err != nil {
-		return nil, err
-	}
-
 	return &Container{
 		remoteContainer{
 			r,
@@ -89,6 +150,41 @@ func (r *LocalRuntime) LookupContainer(idOrName string) (*Container, error) {
 			state,
 		},
 	}, nil
+}
+
+// GetAllContainers returns all containers in a slice
+func (r *LocalRuntime) GetAllContainers() ([]*Container, error) {
+	var containers []*Container
+	ctrs, err := iopodman.GetContainersByContext().Call(r.Conn, true, false, []string{})
+	if err != nil {
+		return nil, err
+	}
+	for _, ctr := range ctrs {
+		container, err := r.LookupContainer(ctr)
+		if err != nil {
+			return nil, err
+		}
+		containers = append(containers, container)
+	}
+	return containers, nil
+}
+
+func (r *LocalRuntime) LookupContainersWithStatus(filters []string) ([]*Container, error) {
+	var containers []*Container
+	ctrs, err := iopodman.GetContainersByStatus().Call(r.Conn, filters)
+	if err != nil {
+		return nil, err
+	}
+	// This is not performance savy; if this turns out to be a problematic series of lookups, we need to
+	// create a new endpoint to speed things up
+	for _, ctr := range ctrs {
+		container, err := r.LookupContainer(ctr.Id)
+		if err != nil {
+			return nil, err
+		}
+		containers = append(containers, container)
+	}
+	return containers, nil
 }
 
 func (r *LocalRuntime) GetLatestContainer() (*Container, error) {
@@ -128,7 +224,7 @@ func (c *Container) Name() string {
 	return c.config.Name
 }
 
-// StopContainers stops requested containers using CLI inputs.
+// StopContainers stops requested containers using varlink.
 // Returns the list of stopped container ids, map of failed to stop container ids + errors, or any non-container error
 func (r *LocalRuntime) StopContainers(ctx context.Context, cli *cliconfig.StopValues) ([]string, map[string]error, error) {
 	var (
@@ -138,21 +234,65 @@ func (r *LocalRuntime) StopContainers(ctx context.Context, cli *cliconfig.StopVa
 
 	ids, err := iopodman.GetContainersByContext().Call(r.Conn, cli.All, cli.Latest, cli.InputArgs)
 	if err != nil {
-		return ok, failures, err
+		return ok, failures, TranslateError(err)
 	}
 
 	for _, id := range ids {
-		stopped, err := iopodman.StopContainer().Call(r.Conn, id, int64(cli.Timeout))
-		if err != nil {
+		if _, err := iopodman.StopContainer().Call(r.Conn, id, int64(cli.Timeout)); err != nil {
+			transError := TranslateError(err)
+			if errors.Cause(transError) == libpod.ErrCtrStopped {
+				ok = append(ok, id)
+				continue
+			}
+			if errors.Cause(transError) == libpod.ErrCtrStateInvalid && cli.All {
+				ok = append(ok, id)
+				continue
+			}
 			failures[id] = err
 		} else {
-			ok = append(ok, stopped)
+			// We should be using ID here because in varlink, only successful returns
+			// include the string id
+			ok = append(ok, id)
 		}
 	}
 	return ok, failures, nil
 }
 
-// KillContainers sends signal to container(s) based on CLI inputs.
+// InitContainers initializes container(s) based on Varlink.
+// It returns a list of successful ID(s), a map of failed container ID to error,
+// or an error if a more general error occurred.
+func (r *LocalRuntime) InitContainers(ctx context.Context, cli *cliconfig.InitValues) ([]string, map[string]error, error) {
+	var (
+		ok       = []string{}
+		failures = map[string]error{}
+	)
+
+	ids, err := iopodman.GetContainersByContext().Call(r.Conn, cli.All, cli.Latest, cli.InputArgs)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for _, id := range ids {
+		initialized, err := iopodman.InitContainer().Call(r.Conn, id)
+		if err != nil {
+			if cli.All {
+				switch err.(type) {
+				case *iopodman.InvalidState:
+					ok = append(ok, initialized)
+				default:
+					failures[id] = err
+				}
+			} else {
+				failures[id] = err
+			}
+		} else {
+			ok = append(ok, initialized)
+		}
+	}
+	return ok, failures, nil
+}
+
+// KillContainers sends signal to container(s) based on varlink.
 // Returns list of successful id(s), map of failed id(s) + error, or error not from container
 func (r *LocalRuntime) KillContainers(ctx context.Context, cli *cliconfig.KillValues, signal syscall.Signal) ([]string, map[string]error, error) {
 	var (
@@ -171,6 +311,52 @@ func (r *LocalRuntime) KillContainers(ctx context.Context, cli *cliconfig.KillVa
 			failures[id] = err
 		} else {
 			ok = append(ok, killed)
+		}
+	}
+	return ok, failures, nil
+}
+
+// RemoveContainer removes container(s) based on varlink inputs.
+func (r *LocalRuntime) RemoveContainers(ctx context.Context, cli *cliconfig.RmValues) ([]string, map[string]error, error) {
+	ids, err := iopodman.GetContainersByContext().Call(r.Conn, cli.All, cli.Latest, cli.InputArgs)
+	if err != nil {
+		return nil, nil, TranslateError(err)
+	}
+
+	var (
+		ok       = []string{}
+		failures = map[string]error{}
+	)
+
+	for _, id := range ids {
+		_, err := iopodman.RemoveContainer().Call(r.Conn, id, cli.Force, cli.Volumes)
+		if err != nil {
+			failures[id] = err
+		} else {
+			ok = append(ok, id)
+		}
+	}
+	return ok, failures, nil
+}
+
+// UmountRootFilesystems umounts container(s) root filesystems based on varlink inputs
+func (r *LocalRuntime) UmountRootFilesystems(ctx context.Context, cli *cliconfig.UmountValues) ([]string, map[string]error, error) {
+	ids, err := iopodman.GetContainersByContext().Call(r.Conn, cli.All, cli.Latest, cli.InputArgs)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var (
+		ok       = []string{}
+		failures = map[string]error{}
+	)
+
+	for _, id := range ids {
+		err := iopodman.UnmountContainer().Call(r.Conn, id, cli.Force)
+		if err != nil {
+			failures[id] = err
+		} else {
+			ok = append(ok, id)
 		}
 	}
 	return ok, failures, nil
@@ -227,7 +413,7 @@ func BatchContainerOp(ctr *Container, opts shared.PsOptions) (shared.BatchContai
 
 // Logs one or more containers over a varlink connection
 func (r *LocalRuntime) Log(c *cliconfig.LogsValues, options *libpod.LogOptions) error {
-	//GetContainersLogs
+	// GetContainersLogs
 	reply, err := iopodman.GetContainersLogs().Send(r.Conn, uint64(varlink.More), c.InputArgs, c.Follow, c.Latest, options.Since.Format(time.RFC3339Nano), int64(c.Tail), c.Timestamps)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get container logs")
@@ -261,4 +447,542 @@ func (r *LocalRuntime) Log(c *cliconfig.LogsValues, options *libpod.LogOptions) 
 		}
 	}
 	return nil
+}
+
+// CreateContainer creates a container from the cli over varlink
+func (r *LocalRuntime) CreateContainer(ctx context.Context, c *cliconfig.CreateValues) (string, error) {
+	results := shared.NewIntermediateLayer(&c.PodmanCommand, true)
+	return iopodman.CreateContainer().Call(r.Conn, results.MakeVarlink())
+}
+
+// Run creates a container overvarlink and then starts it
+func (r *LocalRuntime) Run(ctx context.Context, c *cliconfig.RunValues, exitCode int) (int, error) {
+	// TODO the exit codes for run need to be figured out for remote connections
+	results := shared.NewIntermediateLayer(&c.PodmanCommand, true)
+	cid, err := iopodman.CreateContainer().Call(r.Conn, results.MakeVarlink())
+	if err != nil {
+		return 0, err
+	}
+	if c.Bool("detach") {
+		_, err := iopodman.StartContainer().Call(r.Conn, cid)
+		fmt.Println(cid)
+		return 0, err
+	}
+	errChan, err := r.attach(ctx, os.Stdin, os.Stdout, cid, true, c.String("detach-keys"))
+	if err != nil {
+		return 0, err
+	}
+	finalError := <-errChan
+	return 0, finalError
+}
+
+func ReadExitFile(runtimeTmp, ctrID string) (int, error) {
+	return 0, libpod.ErrNotImplemented
+}
+
+// Ps lists containers based on criteria from user
+func (r *LocalRuntime) Ps(c *cliconfig.PsValues, opts shared.PsOptions) ([]shared.PsContainerOutput, error) {
+	var psContainers []shared.PsContainerOutput
+	last := int64(c.Last)
+	PsOpts := iopodman.PsOpts{
+		All:     c.All,
+		Filters: &c.Filter,
+		Last:    &last,
+		Latest:  &c.Latest,
+		NoTrunc: &c.NoTrunct,
+		Pod:     &c.Pod,
+		Quiet:   &c.Quiet,
+		Sort:    &c.Sort,
+		Sync:    &c.Sync,
+	}
+	containers, err := iopodman.Ps().Call(r.Conn, PsOpts)
+	if err != nil {
+		return nil, err
+	}
+	for _, ctr := range containers {
+		createdAt, err := time.Parse(time.RFC3339Nano, ctr.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		exitedAt, err := time.Parse(time.RFC3339Nano, ctr.ExitedAt)
+		if err != nil {
+			return nil, err
+		}
+		startedAt, err := time.Parse(time.RFC3339Nano, ctr.StartedAt)
+		if err != nil {
+			return nil, err
+		}
+		containerSize := shared.ContainerSize{
+			RootFsSize: ctr.RootFsSize,
+			RwSize:     ctr.RwSize,
+		}
+		state, err := libpod.StringToContainerStatus(ctr.State)
+		if err != nil {
+			return nil, err
+		}
+		psc := shared.PsContainerOutput{
+			ID:        ctr.Id,
+			Image:     ctr.Image,
+			Command:   ctr.Command,
+			Created:   ctr.Created,
+			Ports:     ctr.Ports,
+			Names:     ctr.Names,
+			IsInfra:   ctr.IsInfra,
+			Status:    ctr.Status,
+			State:     state,
+			Pid:       int(ctr.PidNum),
+			Size:      &containerSize,
+			Pod:       ctr.Pod,
+			CreatedAt: createdAt,
+			ExitedAt:  exitedAt,
+			StartedAt: startedAt,
+			Labels:    ctr.Labels,
+			PID:       ctr.NsPid,
+			Cgroup:    ctr.Cgroup,
+			IPC:       ctr.Ipc,
+			MNT:       ctr.Mnt,
+			NET:       ctr.Net,
+			PIDNS:     ctr.PidNs,
+			User:      ctr.User,
+			UTS:       ctr.Uts,
+			Mounts:    ctr.Mounts,
+		}
+		psContainers = append(psContainers, psc)
+	}
+	return psContainers, nil
+}
+
+func (r *LocalRuntime) attach(ctx context.Context, stdin, stdout *os.File, cid string, start bool, detachKeys string) (chan error, error) {
+	var (
+		oldTermState *term.State
+	)
+	errChan := make(chan error)
+	spec, err := r.Spec(cid)
+	if err != nil {
+		return nil, err
+	}
+	resize := make(chan remotecommand.TerminalSize)
+	haveTerminal := terminal.IsTerminal(int(os.Stdin.Fd()))
+
+	// Check if we are attached to a terminal. If we are, generate resize
+	// events, and set the terminal to raw mode
+	if haveTerminal && spec.Process.Terminal {
+		logrus.Debugf("Handling terminal attach")
+
+		subCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		resizeTty(subCtx, resize)
+		oldTermState, err = term.SaveState(os.Stdin.Fd())
+		if err != nil {
+			return nil, errors.Wrapf(err, "unable to save terminal state")
+		}
+
+		logrus.SetFormatter(&RawTtyFormatter{})
+		term.SetRawTerminal(os.Stdin.Fd())
+
+	}
+	// TODO add detach keys support
+	_, err = iopodman.Attach().Send(r.Conn, varlink.Upgrade, cid, detachKeys, start)
+	if err != nil {
+		restoreTerminal(oldTermState)
+		return nil, err
+	}
+
+	// These are the varlink sockets
+	reader := r.Conn.Reader
+	writer := r.Conn.Writer
+
+	// These are the special writers that encode input from the client.
+	varlinkStdinWriter := virtwriter.NewVirtWriteCloser(writer, virtwriter.ToStdin)
+	varlinkResizeWriter := virtwriter.NewVirtWriteCloser(writer, virtwriter.TerminalResize)
+
+	go func() {
+		// Read from the wire and direct to stdout or stderr
+		err := virtwriter.Reader(reader, stdout, os.Stderr, nil, nil)
+		defer restoreTerminal(oldTermState)
+		errChan <- err
+	}()
+
+	go func() {
+		for termResize := range resize {
+			b, err := json.Marshal(termResize)
+			if err != nil {
+				defer restoreTerminal(oldTermState)
+				errChan <- err
+			}
+			_, err = varlinkResizeWriter.Write(b)
+			if err != nil {
+				defer restoreTerminal(oldTermState)
+				errChan <- err
+			}
+		}
+	}()
+
+	// Takes stdinput and sends it over the wire after being encoded
+	go func() {
+		if _, err := io.Copy(varlinkStdinWriter, stdin); err != nil {
+			defer restoreTerminal(oldTermState)
+			errChan <- err
+		}
+
+	}()
+	return errChan, nil
+
+}
+
+// Attach to a remote terminal
+func (r *LocalRuntime) Attach(ctx context.Context, c *cliconfig.AttachValues) error {
+	ctr, err := r.LookupContainer(c.InputArgs[0])
+	if err != nil {
+		return nil
+	}
+	if ctr.state.State != libpod.ContainerStateRunning {
+		return errors.New("you can only attach to running containers")
+	}
+	inputStream := os.Stdin
+	if c.NoStdin {
+		inputStream, err = os.Open(os.DevNull)
+		if err != nil {
+			return err
+		}
+	}
+	errChan, err := r.attach(ctx, inputStream, os.Stdout, c.InputArgs[0], false, c.DetachKeys)
+	if err != nil {
+		return err
+	}
+	return <-errChan
+}
+
+// Checkpoint one or more containers
+func (r *LocalRuntime) Checkpoint(c *cliconfig.CheckpointValues, options libpod.ContainerCheckpointOptions) error {
+	var lastError error
+	ids, err := iopodman.GetContainersByContext().Call(r.Conn, c.All, c.Latest, c.InputArgs)
+	if err != nil {
+		return err
+	}
+	if c.All {
+		// We dont have a great way to get all the running containers, so need to get all and then
+		// check status on them bc checkpoint considers checkpointing a stopped container an error
+		var runningIds []string
+		for _, id := range ids {
+			ctr, err := r.LookupContainer(id)
+			if err != nil {
+				return err
+			}
+			if ctr.state.State == libpod.ContainerStateRunning {
+				runningIds = append(runningIds, id)
+			}
+		}
+		ids = runningIds
+	}
+
+	for _, id := range ids {
+		if _, err := iopodman.ContainerCheckpoint().Call(r.Conn, id, options.Keep, options.KeepRunning, options.TCPEstablished); err != nil {
+			if lastError != nil {
+				fmt.Fprintln(os.Stderr, lastError)
+			}
+			lastError = errors.Wrapf(err, "failed to checkpoint container %v", id)
+		} else {
+			fmt.Println(id)
+		}
+	}
+	return lastError
+}
+
+// Restore one or more containers
+func (r *LocalRuntime) Restore(c *cliconfig.RestoreValues, options libpod.ContainerCheckpointOptions) error {
+	var lastError error
+	ids, err := iopodman.GetContainersByContext().Call(r.Conn, c.All, c.Latest, c.InputArgs)
+	if err != nil {
+		return err
+	}
+	if c.All {
+		// We dont have a great way to get all the exited containers, so need to get all and then
+		// check status on them bc checkpoint considers restoring a running container an error
+		var exitedIDs []string
+		for _, id := range ids {
+			ctr, err := r.LookupContainer(id)
+			if err != nil {
+				return err
+			}
+			if ctr.state.State != libpod.ContainerStateRunning {
+				exitedIDs = append(exitedIDs, id)
+			}
+		}
+		ids = exitedIDs
+	}
+
+	for _, id := range ids {
+		if _, err := iopodman.ContainerRestore().Call(r.Conn, id, options.Keep, options.TCPEstablished); err != nil {
+			if lastError != nil {
+				fmt.Fprintln(os.Stderr, lastError)
+			}
+			lastError = errors.Wrapf(err, "failed to restore container %v", id)
+		} else {
+			fmt.Println(id)
+		}
+	}
+	return lastError
+}
+
+// Start starts an already created container
+func (r *LocalRuntime) Start(ctx context.Context, c *cliconfig.StartValues, sigProxy bool) (int, error) {
+	var (
+		finalErr error
+		exitCode = 125
+	)
+	// TODO Figure out how to deal with exit codes
+	inputStream := os.Stdin
+	if !c.Interactive {
+		inputStream = nil
+	}
+
+	containerIDs, err := iopodman.GetContainersByContext().Call(r.Conn, false, c.Latest, c.InputArgs)
+	if err != nil {
+		return exitCode, err
+	}
+	if len(containerIDs) < 1 {
+		return exitCode, errors.New("failed to find containers to start")
+	}
+	// start.go makes sure that if attach, there can be only one ctr
+	if c.Attach {
+		errChan, err := r.attach(ctx, inputStream, os.Stdout, containerIDs[0], true, c.DetachKeys)
+		if err != nil {
+			return exitCode, nil
+		}
+		err = <-errChan
+		return 0, err
+	}
+
+	// TODO the notion of starting a pod container and its deps still needs to be worked through
+	//	Everything else is detached
+	for _, cid := range containerIDs {
+		reply, err := iopodman.StartContainer().Call(r.Conn, cid)
+		if err != nil {
+			if finalErr != nil {
+				fmt.Println(err)
+			}
+			finalErr = err
+		} else {
+			fmt.Println(reply)
+		}
+	}
+	return exitCode, finalErr
+}
+
+// PauseContainers pauses container(s) based on CLI inputs.
+func (r *LocalRuntime) PauseContainers(ctx context.Context, cli *cliconfig.PauseValues) ([]string, map[string]error, error) {
+	var (
+		ok       []string
+		failures = map[string]error{}
+		ctrs     []*Container
+		err      error
+	)
+
+	if cli.All {
+		filters := []string{libpod.ContainerStateRunning.String()}
+		ctrs, err = r.LookupContainersWithStatus(filters)
+	} else {
+		ctrs, err = r.LookupContainers(cli.InputArgs)
+	}
+	if err != nil {
+		return ok, failures, err
+	}
+
+	for _, c := range ctrs {
+		c := c
+		err := c.Pause()
+		if err != nil {
+			failures[c.ID()] = err
+		} else {
+			ok = append(ok, c.ID())
+		}
+	}
+	return ok, failures, nil
+}
+
+// UnpauseContainers unpauses containers based on input
+func (r *LocalRuntime) UnpauseContainers(ctx context.Context, cli *cliconfig.UnpauseValues) ([]string, map[string]error, error) {
+	var (
+		ok       = []string{}
+		failures = map[string]error{}
+		ctrs     []*Container
+		err      error
+	)
+
+	maxWorkers := shared.DefaultPoolSize("unpause")
+	if cli.GlobalIsSet("max-workers") {
+		maxWorkers = cli.GlobalFlags.MaxWorks
+	}
+	logrus.Debugf("Setting maximum rm workers to %d", maxWorkers)
+
+	if cli.All {
+		filters := []string{libpod.ContainerStatePaused.String()}
+		ctrs, err = r.LookupContainersWithStatus(filters)
+	} else {
+		ctrs, err = r.LookupContainers(cli.InputArgs)
+	}
+	if err != nil {
+		return ok, failures, err
+	}
+	for _, c := range ctrs {
+		c := c
+		err := c.Unpause()
+		if err != nil {
+			failures[c.ID()] = err
+		} else {
+			ok = append(ok, c.ID())
+		}
+	}
+	return ok, failures, nil
+}
+
+// Restart restarts a container over varlink
+func (r *LocalRuntime) Restart(ctx context.Context, c *cliconfig.RestartValues) ([]string, map[string]error, error) {
+	var (
+		containers        []*Container
+		restartContainers []*Container
+		err               error
+		ok                = []string{}
+		failures          = map[string]error{}
+	)
+	useTimeout := c.Flag("timeout").Changed || c.Flag("time").Changed
+	inputTimeout := c.Timeout
+
+	if c.Latest {
+		lastCtr, err := r.GetLatestContainer()
+		if err != nil {
+			return nil, nil, errors.Wrapf(err, "unable to get latest container")
+		}
+		restartContainers = append(restartContainers, lastCtr)
+	} else if c.Running {
+		containers, err = r.LookupContainersWithStatus([]string{libpod.ContainerStateRunning.String()})
+		if err != nil {
+			return nil, nil, err
+		}
+		restartContainers = append(restartContainers, containers...)
+	} else if c.All {
+		containers, err = r.GetAllContainers()
+		if err != nil {
+			return nil, nil, err
+		}
+		restartContainers = append(restartContainers, containers...)
+	} else {
+		for _, id := range c.InputArgs {
+			ctr, err := r.LookupContainer(id)
+			if err != nil {
+				return nil, nil, err
+			}
+			restartContainers = append(restartContainers, ctr)
+		}
+	}
+
+	for _, c := range restartContainers {
+		c := c
+		timeout := c.config.StopTimeout
+		if useTimeout {
+			timeout = inputTimeout
+		}
+		err := c.Restart(int64(timeout))
+		if err != nil {
+			failures[c.ID()] = err
+		} else {
+			ok = append(ok, c.ID())
+		}
+	}
+	return ok, failures, nil
+}
+
+// Top display the running processes of a container
+func (r *LocalRuntime) Top(cli *cliconfig.TopValues) ([]string, error) {
+	var (
+		ctr         *Container
+		err         error
+		descriptors []string
+	)
+	if cli.Latest {
+		ctr, err = r.GetLatestContainer()
+		descriptors = cli.InputArgs
+	} else {
+		ctr, err = r.LookupContainer(cli.InputArgs[0])
+		descriptors = cli.InputArgs[1:]
+	}
+	if err != nil {
+		return nil, err
+	}
+	return iopodman.Top().Call(r.Conn, ctr.ID(), descriptors)
+}
+
+// Prune removes stopped containers
+func (r *LocalRuntime) Prune(ctx context.Context, maxWorkers int, force bool) ([]string, map[string]error, error) {
+
+	var (
+		ok       = []string{}
+		failures = map[string]error{}
+		ctrs     []*Container
+		err      error
+	)
+	logrus.Debugf("Setting maximum rm workers to %d", maxWorkers)
+
+	filters := []string{libpod.ContainerStateExited.String()}
+	ctrs, err = r.LookupContainersWithStatus(filters)
+	if err != nil {
+		return ok, failures, err
+	}
+	for _, c := range ctrs {
+		c := c
+		_, err := iopodman.RemoveContainer().Call(r.Conn, c.ID(), false, false)
+		if err != nil {
+			failures[c.ID()] = err
+		} else {
+			ok = append(ok, c.ID())
+		}
+	}
+	return ok, failures, nil
+}
+
+// Cleanup any leftovers bits of stopped containers
+func (r *LocalRuntime) CleanupContainers(ctx context.Context, cli *cliconfig.CleanupValues) ([]string, map[string]error, error) {
+	return nil, nil, errors.New("container cleanup not supported for remote clients")
+}
+
+// Port displays port information about existing containers
+func (r *LocalRuntime) Port(c *cliconfig.PortValues) ([]*Container, error) {
+	var (
+		containers []*Container
+		err        error
+	)
+	// This one is a bit odd because when all is used, we only use running containers.
+	if !c.All {
+		containers, err = r.GetContainersByContext(false, c.Latest, c.InputArgs)
+	} else {
+		//	we need to only use running containers if all
+		filters := []string{libpod.ContainerStateRunning.String()}
+		containers, err = r.LookupContainersWithStatus(filters)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return containers, nil
+}
+
+// GenerateSystemd creates a systemd until for a container
+func (r *LocalRuntime) GenerateSystemd(c *cliconfig.GenerateSystemdValues) (string, error) {
+	return iopodman.GenerateSystemd().Call(r.Conn, c.InputArgs[0], c.RestartPolicy, int64(c.StopTimeout), c.Name)
+}
+
+// GetNamespaces returns namespace information about a container for PS
+func (r *LocalRuntime) GetNamespaces(container shared.PsContainerOutput) *shared.Namespace {
+	ns := shared.Namespace{
+		PID:    container.PID,
+		Cgroup: container.Cgroup,
+		IPC:    container.IPC,
+		MNT:    container.MNT,
+		NET:    container.NET,
+		PIDNS:  container.PIDNS,
+		User:   container.User,
+		UTS:    container.UTS,
+	}
+	return &ns
 }

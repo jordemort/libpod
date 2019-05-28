@@ -65,13 +65,13 @@ libpod to manage containers.
 **cni_plugin_dir**=""
   Directories where CNI plugin binaries may be located
 
-**pause_image** = ""
-  Pause container image name for pod pause containers.  When running a pod, we
-  start a `pause` processes in a container to hold open the namespaces associated with the
+**infra_image** = ""
+  Infra (pause) container image name for pod infra containers.  When running a pod, we
+  start a `pause` process in a container to hold open the namespaces associated with the
   pod.  This container and process, basically sleep/pause for the lifetime of the pod.
 
-**pause_command**=""
-  Command to run the pause container
+**infra_command**=""
+  Command to run the infra container
 
 **namespace**=""
   Default libpod namespace. If libpod is joined to a namespace, it will see only containers and pods
@@ -94,6 +94,9 @@ libpod to manage containers.
 **network_cmd_path**=""
   Path to the command binary to use for setting up a network.  It is currently only used for setting up
   a slirp4netns network.  If "" is used then the binary is looked up using the $PATH environment variable.
+
+**events_logger**=""
+  Default method to use when logging events. Valid values are "journald" and "file".
 
 ## FILES
   `/usr/share/containers/libpod.conf`, default libpod configuration path

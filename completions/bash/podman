@@ -780,6 +780,10 @@ _podman_container_export() {
      _podman_export
 }
 
+_podman_container_init() {
+     _podman_init
+}
+
 _podman_container_inspect() {
      _podman_inspect
 }
@@ -915,6 +919,7 @@ _podman_generate() {
 	"
      subcommands="
 	 kube
+	 systemd
      "
      __podman_subcommands "$subcommands $aliases" && return
 
@@ -1711,6 +1716,7 @@ _podman_container_run() {
 		--gidmap
 		--group-add
 		--hostname -h
+		--http-proxy
 		--image-volume
 		--init-path
 		--ip
@@ -1765,6 +1771,7 @@ _podman_container_run() {
 	    --publish-all -P
 	    --quiet
 	    --read-only
+	    --read-only-tmpfs
 	    --tty -t
 	"
 
@@ -2221,6 +2228,27 @@ _podman_ps() {
      _complete_ "$options_with_args" "$boolean_options"
 }
 
+_podman_init() {
+    local boolean_options="
+        --all
+        -a
+        --help
+        -h
+        --latest
+        -l
+    "
+    local options_with_args="
+    "
+    case "$cur" in
+        -*)
+	    COMPREPLY=($(compgen -W "$boolean_options $options_with_args" -- "$cur"))
+            ;;
+        *)
+            __podman_complete_containers_unpauseable
+	    ;;
+    esac
+}
+
 _podman_start() {
      local options_with_args="
      --detach-keys
@@ -2388,7 +2416,7 @@ _podman_logout() {
      _complete_ "$options_with_args" "$boolean_options"
 }
 
-_podman_healtcheck_run() {
+_podman_healthcheck_run() {
     local options_with_args=""
 
     local boolean_options="
@@ -2427,6 +2455,32 @@ _podman_generate_kube() {
 	    COMPREPLY=( $( compgen -W "
 			  $(__podman_containers --all)
 			  $(__podman_pods)
+			  " -- "$cur" ) )
+	    __ltrim_colon_completions "$cur"
+	    ;;
+    esac
+}
+
+_podman_generate_systemd() {
+    local options_with_args="
+    --restart-policy
+    -t
+    --timeout"
+
+    local boolean_options="
+    -h
+    --help
+    -n
+    --name
+    "
+
+    case "$cur" in
+	-*)
+	    COMPREPLY=($(compgen -W "$boolean_options $options_with_args" -- "$cur"))
+	    ;;
+	*)
+	    COMPREPLY=( $( compgen -W "
+			  $(__podman_containers --all)
 			  " -- "$cur" ) )
 	    __ltrim_colon_completions "$cur"
 	    ;;
@@ -2738,6 +2792,22 @@ _podman_pod_list() {
 
 _podman_pod_ps() {
   __podman_pod_ps
+}
+
+_podman_pod_prune() {
+    local options_with_args="
+    "
+
+    local boolean_options="
+     -f
+     -h
+	 --help
+  "
+    case "$cur" in
+	-*)
+	    COMPREPLY=($(compgen -W "$boolean_options $options_with_args" -- "$cur"))
+	    ;;
+    esac
 }
 
 _podman_pod_restart() {

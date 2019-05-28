@@ -1,10 +1,11 @@
 package main
 
 import (
-	"io/ioutil"
+	"archive/tar"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/containers/buildah/pkg/chrootuser"
@@ -12,7 +13,6 @@ import (
 	"github.com/containers/libpod/cmd/podman/cliconfig"
 	"github.com/containers/libpod/cmd/podman/libpodruntime"
 	"github.com/containers/libpod/libpod"
-	"github.com/containers/libpod/pkg/rootless"
 	"github.com/containers/storage"
 	"github.com/containers/storage/pkg/archive"
 	"github.com/containers/storage/pkg/chrootarchive"
@@ -38,6 +38,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cpCommand.InputArgs = args
 			cpCommand.GlobalFlags = MainGlobalOpts
+			cpCommand.Remote = remoteclient
 			return cpCmd(&cpCommand)
 		},
 		Example: "[CONTAINER:]SRC_PATH [CONTAINER:]DEST_PATH",
@@ -58,11 +59,8 @@ func cpCmd(c *cliconfig.CpValues) error {
 	if len(args) != 2 {
 		return errors.Errorf("you must provide a source path and a destination path")
 	}
-	if os.Geteuid() != 0 {
-		rootless.SetSkipStorageSetup(true)
-	}
 
-	runtime, err := libpodruntime.GetRuntime(&c.PodmanCommand)
+	runtime, err := libpodruntime.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}
@@ -88,34 +86,6 @@ func copyBetweenHostAndContainer(runtime *libpod.Runtime, src string, dest strin
 	isFromHostToCtr := (ctr == nil)
 	if isFromHostToCtr {
 		ctr = destCtr
-	}
-
-	if os.Geteuid() != 0 {
-		s, err := ctr.State()
-		if err != nil {
-			return err
-		}
-		var became bool
-		var ret int
-		if s == libpod.ContainerStateRunning || s == libpod.ContainerStatePaused {
-			data, err := ioutil.ReadFile(ctr.Config().ConmonPidFile)
-			if err != nil {
-				return errors.Wrapf(err, "cannot read conmon PID file %q", ctr.Config().ConmonPidFile)
-			}
-			conmonPid, err := strconv.Atoi(string(data))
-			if err != nil {
-				return errors.Wrapf(err, "cannot parse PID %q", data)
-			}
-			became, ret, err = rootless.JoinDirectUserAndMountNS(uint(conmonPid))
-		} else {
-			became, ret, err = rootless.BecomeRootInUserNS()
-		}
-		if err != nil {
-			return err
-		}
-		if became {
-			os.Exit(ret)
-		}
 	}
 
 	mountPoint, err := ctr.Mount()
@@ -174,7 +144,11 @@ func copyBetweenHostAndContainer(runtime *libpod.Runtime, src string, dest strin
 
 	var lastError error
 	for _, src := range glob {
-		err := copy(src, destPath, dest, idMappingOpts, &containerOwner, extract)
+		if src == "-" {
+			src = os.Stdin.Name()
+			extract = true
+		}
+		err := copy(src, destPath, dest, idMappingOpts, &containerOwner, extract, isFromHostToCtr)
 		if lastError != nil {
 			logrus.Error(lastError)
 		}
@@ -227,7 +201,7 @@ func getPathInfo(path string) (string, os.FileInfo, error) {
 	return path, srcfi, nil
 }
 
-func copy(src, destPath, dest string, idMappingOpts storage.IDMappingOptions, chownOpts *idtools.IDPair, extract bool) error {
+func copy(src, destPath, dest string, idMappingOpts storage.IDMappingOptions, chownOpts *idtools.IDPair, extract, isFromHostToCtr bool) error {
 	srcPath, err := filepath.EvalSymlinks(src)
 	if err != nil {
 		return errors.Wrapf(err, "error evaluating symlinks %q", srcPath)
@@ -237,10 +211,25 @@ func copy(src, destPath, dest string, idMappingOpts storage.IDMappingOptions, ch
 	if err != nil {
 		return err
 	}
+
+	filename := filepath.Base(destPath)
+	if filename == "-" && !isFromHostToCtr {
+		err := streamFileToStdout(srcPath, srcfi)
+		if err != nil {
+			return errors.Wrapf(err, "error streaming source file %s to Stdout", srcPath)
+		}
+		return nil
+	}
+
 	destdir := destPath
 	if !srcfi.IsDir() && !strings.HasSuffix(dest, string(os.PathSeparator)) {
 		destdir = filepath.Dir(destPath)
 	}
+	_, err = os.Stat(destdir)
+	if err != nil && !os.IsNotExist(err) {
+		return errors.Wrapf(err, "error checking directory %q", destdir)
+	}
+	destDirIsExist := (err == nil)
 	if err = os.MkdirAll(destdir, 0755); err != nil {
 		return errors.Wrapf(err, "error creating directory %q", destdir)
 	}
@@ -251,8 +240,10 @@ func copy(src, destPath, dest string, idMappingOpts storage.IDMappingOptions, ch
 	untarPath := chrootarchive.UntarPathAndChown(chownOpts, digest.Canonical.Digester().Hash(), idMappingOpts.UIDMap, idMappingOpts.GIDMap)
 
 	if srcfi.IsDir() {
-
 		logrus.Debugf("copying %q to %q", srcPath+string(os.PathSeparator)+"*", dest+string(os.PathSeparator)+"*")
+		if destDirIsExist && !strings.HasSuffix(src, fmt.Sprintf("%s.", string(os.PathSeparator))) {
+			destPath = filepath.Join(destPath, filepath.Base(srcPath))
+		}
 		if err = copyWithTar(srcPath, destPath); err != nil {
 			return errors.Wrapf(err, "error copying %q to %q", srcPath, dest)
 		}
@@ -299,4 +290,63 @@ func convertIDMap(idMaps []idtools.IDMap) (convertedIDMap []specs.LinuxIDMapping
 		convertedIDMap = append(convertedIDMap, tempIDMap)
 	}
 	return convertedIDMap
+}
+
+func streamFileToStdout(srcPath string, srcfi os.FileInfo) error {
+	if srcfi.IsDir() {
+		tw := tar.NewWriter(os.Stdout)
+		err := filepath.Walk(srcPath, func(path string, info os.FileInfo, err error) error {
+			if err != nil || !info.Mode().IsRegular() || path == srcPath {
+				return err
+			}
+			hdr, err := tar.FileInfoHeader(info, "")
+			if err != nil {
+				return err
+			}
+
+			if err = tw.WriteHeader(hdr); err != nil {
+				return err
+			}
+			fh, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer fh.Close()
+
+			_, err = io.Copy(tw, fh)
+			return err
+		})
+		if err != nil {
+			return errors.Wrapf(err, "error streaming directory %s to Stdout", srcPath)
+		}
+		return nil
+	}
+
+	file, err := os.Open(srcPath)
+	if err != nil {
+		return errors.Wrapf(err, "error opening file %s", srcPath)
+	}
+	defer file.Close()
+	if !archive.IsArchivePath(srcPath) {
+		tw := tar.NewWriter(os.Stdout)
+		hdr, err := tar.FileInfoHeader(srcfi, "")
+		if err != nil {
+			return err
+		}
+		err = tw.WriteHeader(hdr)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(tw, file)
+		if err != nil {
+			return errors.Wrapf(err, "error streaming archive %s to Stdout", srcPath)
+		}
+		return nil
+	}
+
+	_, err = io.Copy(os.Stdout, file)
+	if err != nil {
+		return errors.Wrapf(err, "error streaming file to Stdout")
+	}
+	return nil
 }

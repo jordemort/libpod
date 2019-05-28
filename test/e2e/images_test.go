@@ -43,6 +43,17 @@ var _ = Describe("Podman images", func() {
 		Expect(session.LineInOuputStartsWith("docker.io/library/busybox")).To(BeTrue())
 	})
 
+	It("podman images with no images prints header", func() {
+		rmi := podmanTest.Podman([]string{"rmi", "-a"})
+		rmi.WaitWithDefaultTimeout()
+		Expect(rmi.ExitCode()).To(Equal(0))
+
+		session := podmanTest.Podman([]string{"images"})
+		session.WaitWithDefaultTimeout()
+		Expect(session.ExitCode()).To(Equal(0))
+		Expect(len(session.OutputToStringArray())).To(Equal(1))
+	})
+
 	It("podman image List", func() {
 		session := podmanTest.Podman([]string{"image", "list"})
 		session.WaitWithDefaultTimeout()
@@ -158,12 +169,13 @@ var _ = Describe("Podman images", func() {
 			Skip("Does not work on remote client")
 		}
 		dockerfile := `FROM docker.io/library/alpine:latest
+RUN apk update && apk add man
 `
 		podmanTest.BuildImage(dockerfile, "foobar.com/before:latest", "false")
 		result := podmanTest.Podman([]string{"images", "-q", "-f", "before=foobar.com/before:latest"})
 		result.WaitWithDefaultTimeout()
 		Expect(result.ExitCode()).To(Equal(0))
-		Expect(len(result.OutputToStringArray())).To(Equal(2))
+		Expect(len(result.OutputToStringArray()) >= 1).To(BeTrue())
 	})
 
 	It("podman images filter after image", func() {
@@ -180,7 +192,7 @@ var _ = Describe("Podman images", func() {
 		result := podmanTest.Podman([]string{"images", "-q", "-f", "after=docker.io/library/alpine:latest"})
 		result.WaitWithDefaultTimeout()
 		Expect(result.ExitCode()).To(Equal(0))
-		Expect(len(result.OutputToStringArray())).To(Equal(1))
+		Expect(len(result.OutputToStringArray())).To(Equal(0))
 	})
 
 	It("podman image list filter after image", func() {
@@ -197,7 +209,7 @@ var _ = Describe("Podman images", func() {
 		result := podmanTest.Podman([]string{"image", "list", "-q", "-f", "after=docker.io/library/alpine:latest"})
 		result.WaitWithDefaultTimeout()
 		Expect(result.ExitCode()).To(Equal(0))
-		Expect(len(result.OutputToStringArray())).To(Equal(1))
+		Expect(len(result.OutputToStringArray())).To(Equal(0))
 	})
 
 	It("podman images filter dangling", func() {
@@ -211,7 +223,7 @@ var _ = Describe("Podman images", func() {
 		result := podmanTest.Podman([]string{"images", "-q", "-f", "dangling=true"})
 		result.WaitWithDefaultTimeout()
 		Expect(result.ExitCode()).To(Equal(0))
-		Expect(len(result.OutputToStringArray())).To(Equal(1))
+		Expect(len(result.OutputToStringArray())).To(Equal(0))
 	})
 
 	It("podman check for image with sha256: prefix", func() {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/containers/buildah/pkg/formats"
 	"github.com/containers/libpod/cmd/podman/cliconfig"
-	"github.com/containers/libpod/cmd/podman/libpodruntime"
+	"github.com/containers/libpod/pkg/adapter"
 	"github.com/containers/storage/pkg/archive"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -43,6 +43,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			diffCommand.InputArgs = args
 			diffCommand.GlobalFlags = MainGlobalOpts
+			diffCommand.Remote = remoteclient
 			return diffCmd(&diffCommand)
 		},
 		Example: `podman diff imageID
@@ -86,18 +87,17 @@ func diffCmd(c *cliconfig.DiffValues) error {
 		return errors.Errorf("container, image, or layer name must be specified: podman diff [options [...]] ID-NAME")
 	}
 
-	runtime, err := libpodruntime.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}
 	defer runtime.Shutdown(false)
 
 	to := c.InputArgs[0]
-	changes, err := runtime.GetDiff("", to)
+	changes, err := runtime.Diff(c, to)
 	if err != nil {
 		return errors.Wrapf(err, "could not get changes for %q", to)
 	}
-
 	diffOutput := []diffOutputParams{}
 	outputFormat := c.Format
 

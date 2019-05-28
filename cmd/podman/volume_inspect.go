@@ -19,6 +19,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			volumeInspectCommand.InputArgs = args
 			volumeInspectCommand.GlobalFlags = MainGlobalOpts
+			volumeInspectCommand.Remote = remoteclient
 			return volumeInspectCmd(&volumeInspectCommand)
 		},
 		Example: `podman volume inspect myvol
@@ -42,7 +43,7 @@ func volumeInspectCmd(c *cliconfig.VolumeInspectValues) error {
 		return errors.New("provide one or more volume names or use --all")
 	}
 
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "error creating libpod runtime")
 	}

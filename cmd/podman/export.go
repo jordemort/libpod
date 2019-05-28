@@ -6,7 +6,6 @@ import (
 	"github.com/containers/libpod/cmd/podman/cliconfig"
 	"github.com/containers/libpod/cmd/podman/shared/parse"
 	"github.com/containers/libpod/pkg/adapter"
-	"github.com/containers/libpod/pkg/rootless"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -24,6 +23,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			exportCommand.InputArgs = args
 			exportCommand.GlobalFlags = MainGlobalOpts
+			exportCommand.Remote = remoteclient
 			return exportCmd(&exportCommand)
 		},
 		Example: `podman export ctrID > myCtr.tar
@@ -41,11 +41,7 @@ func init() {
 
 // exportCmd saves a container to a tarball on disk
 func exportCmd(c *cliconfig.ExportValues) error {
-	if os.Geteuid() != 0 {
-		rootless.SetSkipStorageSetup(true)
-	}
-
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}

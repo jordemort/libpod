@@ -294,27 +294,31 @@ func getCreateFlags(c *cliconfig.PodmanCommand) {
 		"set a healthcheck command for the container ('none' disables the existing healthcheck)",
 	)
 	createFlags.String(
-		"healthcheck-interval", "30s",
+		"healthcheck-interval", cliconfig.DefaultHealthCheckInterval,
 		"set an interval for the healthchecks (a value of disable results in no automatic timer setup)",
 	)
 	createFlags.Uint(
-		"healthcheck-retries", 3,
+		"healthcheck-retries", cliconfig.DefaultHealthCheckRetries,
 		"the number of retries allowed before a healthcheck is considered to be unhealthy",
 	)
 	createFlags.String(
-		"healthcheck-start-period", "0s",
+		"healthcheck-start-period", cliconfig.DefaultHealthCheckStartPeriod,
 		"the initialization time needed for a container to bootstrap",
 	)
 	createFlags.String(
-		"healthcheck-timeout", "30s",
+		"healthcheck-timeout", cliconfig.DefaultHealthCheckTimeout,
 		"the maximum time allowed to complete the healthcheck before an interval is considered failed",
 	)
 	createFlags.StringP(
 		"hostname", "h", "",
 		"Set container hostname",
 	)
+	createFlags.Bool(
+		"http-proxy", true,
+		"Set proxy environment variables in the container based on the host proxy vars",
+	)
 	createFlags.String(
-		"image-volume", "bind",
+		"image-volume", cliconfig.DefaultImageVolume,
 		"Tells podman how to handle the builtin image volumes. The options are: 'bind', 'tmpfs', or 'ignore'",
 	)
 	createFlags.Bool(
@@ -434,9 +438,13 @@ func getCreateFlags(c *cliconfig.PodmanCommand) {
 		"read-only", false,
 		"Make containers root filesystem read-only",
 	)
+	createFlags.Bool(
+		"read-only-tmpfs", true,
+		"When running containers in read-only mode mount a read-write tmpfs on /run, /tmp and /var/tmp",
+	)
 	createFlags.String(
 		"restart", "",
-		"Restart is not supported.  Please use a systemd unit file for restart",
+		"Restart policy to apply when a container exits",
 	)
 	createFlags.Bool(
 		"rm", false,
@@ -451,7 +459,7 @@ func getCreateFlags(c *cliconfig.PodmanCommand) {
 		"Security Options (default [])",
 	)
 	createFlags.String(
-		"shm-size", "65536k",
+		"shm-size", cliconfig.DefaultShmSize,
 		"Size of `/dev/shm`. The format is `<number><unit>`",
 	)
 	createFlags.String(
@@ -480,7 +488,7 @@ func getCreateFlags(c *cliconfig.PodmanCommand) {
 		"Sysctl options (default [])",
 	)
 	createFlags.Bool(
-		"systemd", true,
+		"systemd", cliconfig.DefaultSystemD,
 		"Run container in systemd mode if the command executable is systemd or init",
 	)
 	createFlags.StringSlice(

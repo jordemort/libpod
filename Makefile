@@ -1,6 +1,6 @@
 GO ?= go
 DESTDIR ?= /
-EPOCH_TEST_COMMIT ?= 1c45b42e9ff972d9645735118635e4186e6411f8
+EPOCH_TEST_COMMIT ?= a9fc570dd844bf1ebd1f106f1b8091882b4a2b29
 HEAD ?= HEAD
 CHANGELOG_BASE ?= HEAD~
 CHANGELOG_TARGET ?= HEAD
@@ -18,7 +18,23 @@ SHAREDIR_CONTAINERS ?= ${PREFIX}/share/containers
 ETCDIR ?= ${DESTDIR}/etc
 TMPFILESDIR ?= ${PREFIX}/lib/tmpfiles.d
 SYSTEMDDIR ?= ${PREFIX}/lib/systemd/system
-BUILDTAGS ?= seccomp $(shell hack/btrfs_tag.sh) $(shell hack/btrfs_installed_tag.sh) $(shell hack/ostree_tag.sh) $(shell hack/selinux_tag.sh) $(shell hack/apparmor_tag.sh) varlink exclude_graphdriver_devicemapper
+BUILDTAGS ?= \
+	$(shell hack/apparmor_tag.sh) \
+	$(shell hack/btrfs_installed_tag.sh) \
+	$(shell hack/btrfs_tag.sh) \
+	$(shell hack/ostree_tag.sh) \
+	$(shell hack/selinux_tag.sh) \
+	$(shell hack/systemd_tag.sh) \
+	exclude_graphdriver_devicemapper \
+	seccomp \
+	varlink
+
+ifeq (,$(findstring systemd,$(BUILDTAGS)))
+$(warning \
+	Podman is being compiled without the systemd build tag.\
+	Install libsystemd for journald support)
+endif
+
 BUILDTAGS_CROSS ?= containers_image_openpgp containers_image_ostree_stub exclude_graphdriver_btrfs exclude_graphdriver_devicemapper exclude_graphdriver_overlay
 ifneq (,$(findstring varlink,$(BUILDTAGS)))
 	PODMAN_VARLINK_DEPENDENCIES = cmd/podman/varlink/iopodman.go
@@ -30,7 +46,6 @@ BASHINSTALLDIR=${PREFIX}/share/bash-completion/completions
 ZSHINSTALLDIR=${PREFIX}/share/zsh/site-functions
 
 SELINUXOPT ?= $(shell test -x /usr/sbin/selinuxenabled && selinuxenabled && echo -Z)
-PACKAGES ?= $(shell $(GO) list -tags "${BUILDTAGS}" ./... | grep -v github.com/containers/libpod/vendor | grep -v e2e | grep -v system )
 
 COMMIT_NO ?= $(shell git rev-parse HEAD 2> /dev/null || true)
 GIT_COMMIT ?= $(if $(shell git status --porcelain --untracked-files=no),${COMMIT_NO}-dirty,${COMMIT_NO})
@@ -121,6 +136,9 @@ podman-remote: .gopathok $(PODMAN_VARLINK_DEPENDENCIES) ## Build with podman on 
 podman-remote-darwin: .gopathok $(PODMAN_VARLINK_DEPENDENCIES) ## Build with podman on remote OSX environment
 	GOOS=darwin $(GO) build -ldflags '$(LDFLAGS_PODMAN)' -tags "remoteclient containers_image_openpgp exclude_graphdriver_devicemapper" -o bin/$@ $(PROJECT)/cmd/podman
 
+podman-remote-windows: .gopathok $(PODMAN_VARLINK_DEPENDENCIES) ## Build with podman for a remote windows environment
+	GOOS=windows $(GO) build -ldflags '$(LDFLAGS_PODMAN)' -tags "remoteclient containers_image_openpgp exclude_graphdriver_devicemapper" -o bin/$@.exe $(PROJECT)/cmd/podman
+
 local-cross: $(CROSS_BUILD_TARGETS) ## Cross local compilation
 
 bin/podman.cross.%: .gopathok
@@ -153,6 +171,12 @@ libpodimage: ## Build the libpod image
 dbuild: libpodimage
 	${CONTAINER_RUNTIME} run --name=${LIBPOD_INSTANCE} --privileged -v ${PWD}:/go/src/${PROJECT} --rm ${LIBPOD_IMAGE} make all
 
+dbuild-podman-remote: libpodimage
+	${CONTAINER_RUNTIME} run --name=${LIBPOD_INSTANCE} --privileged -v ${PWD}:/go/src/${PROJECT} --rm ${LIBPOD_IMAGE} go build -ldflags '$(LDFLAGS_PODMAN)' -tags "$(BUILDTAGS) remoteclient" -o bin/podman-remote $(PROJECT)/cmd/podman
+
+dbuild-podman-remote-darwin: libpodimage
+	${CONTAINER_RUNTIME} run --name=${LIBPOD_INSTANCE} --privileged -v ${PWD}:/go/src/${PROJECT} --rm ${LIBPOD_IMAGE} env GOOS=darwin go build -ldflags '$(LDFLAGS_PODMAN)' -tags "remoteclient containers_image_openpgp exclude_graphdriver_devicemapper" -o bin/podman-remote-darwin $(PROJECT)/cmd/podman
+
 test: libpodimage ## Run tests on built image
 	${CONTAINER_RUNTIME} run -e STORAGE_OPTIONS="--storage-driver=vfs" -e TESTFLAGS -e OCI_RUNTIME -e CGROUP_MANAGER=cgroupfs -e TRAVIS -t --privileged --rm -v ${CURDIR}:/go/src/${PROJECT} ${LIBPOD_IMAGE} make clean all localunit install.catatonit localintegration
 
@@ -172,16 +196,25 @@ testunit: libpodimage ## Run unittest on the built image
 	${CONTAINER_RUNTIME} run -e STORAGE_OPTIONS="--storage-driver=vfs" -e TESTFLAGS -e CGROUP_MANAGER=cgroupfs -e OCI_RUNTIME -e TRAVIS -t --privileged --rm -v ${CURDIR}:/go/src/${PROJECT} ${LIBPOD_IMAGE} make localunit
 
 localunit: test/goecho/goecho varlink_generate
-	$(GO) test -tags "$(BUILDTAGS)" -cover $(PACKAGES)
+	ginkgo \
+		-r \
+		--skipPackage test/e2e,pkg/apparmor \
+		--cover \
+		--covermode atomic \
+		--tags "$(BUILDTAGS)" \
+		--succinct
 	$(MAKE) -C contrib/cirrus/packer test
+	./contrib/cirrus/lib.sh.t
 
 ginkgo:
-	ginkgo -v -tags "$(BUILDTAGS)" $(GINKGOTIMEOUT) -cover -flakeAttempts 3 -progress -trace -noColor -nodes 3 test/e2e/.
+	ginkgo -v -tags "$(BUILDTAGS)" $(GINKGOTIMEOUT) -cover -flakeAttempts 3 -progress -trace -noColor -nodes 3 -debug test/e2e/.
 
 ginkgo-remote:
 	ginkgo -v -tags "$(BUILDTAGS) remoteclient" $(GINKGOTIMEOUT) -cover -flakeAttempts 3 -progress -trace -noColor test/e2e/.
 
-localintegration: varlink_generate test-binaries ginkgo ginkgo-remote
+localintegration: varlink_generate test-binaries ginkgo
+
+remoteintegration: varlink_generate test-binaries ginkgo-remote
 
 localsystem: .install.ginkgo
 	ginkgo -v -noColor test/system/
@@ -231,7 +264,9 @@ install: .gopathok install.bin install.man install.cni install.systemd  ## Insta
 install.bin:
 	install ${SELINUXOPT} -d -m 755 $(BINDIR)
 	install ${SELINUXOPT} -m 755 bin/podman $(BINDIR)/podman
+	install ${SELINUXOPT} -m 755 bin/podman-remote $(BINDIR)/podman-remote
 	test -z "${SELINUXOPT}" || chcon --verbose --reference=$(BINDIR)/podman bin/podman
+	test -z "${SELINUXOPT}" || chcon --verbose --reference=$(BINDIR)/podman bin/podman-remote
 
 install.man: docs
 	install ${SELINUXOPT} -d -m 755 $(MANDIR)/man1

@@ -33,6 +33,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			saveCommand.InputArgs = args
 			saveCommand.GlobalFlags = MainGlobalOpts
+			saveCommand.Remote = remoteclient
 			return saveCmd(&saveCommand)
 		},
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -69,7 +70,7 @@ func saveCmd(c *cliconfig.SaveValues) error {
 		return errors.Errorf("need at least 1 argument")
 	}
 
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not create runtime")
 	}

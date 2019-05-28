@@ -29,6 +29,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			podStatsCommand.InputArgs = args
 			podStatsCommand.GlobalFlags = MainGlobalOpts
+			podStatsCommand.Remote = remoteclient
 			return podStatsCmd(&podStatsCommand)
 		},
 		Example: `podman stats -a --no-stream
@@ -77,7 +78,7 @@ func podStatsCmd(c *cliconfig.PodStatsValues) error {
 		all = true
 	}
 
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}

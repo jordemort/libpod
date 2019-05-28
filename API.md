@@ -3,7 +3,13 @@ Podman Service Interface and API description.  The master version of this docume
 in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in the upstream libpod repository.
 ## Index
 
+[func Attach(name: string, detachKeys: string, start: bool) ](#Attach)
+
+[func AttachControl(name: string) ](#AttachControl)
+
 [func BuildImage(build: BuildInfo) MoreResponse](#BuildImage)
+
+[func BuildImageHierarchyMap(name: string) string](#BuildImageHierarchyMap)
 
 [func Commit(name: string, image_name: string, changes: []string, author: string, message: string, pause: bool, manifestType: string) string](#Commit)
 
@@ -25,15 +31,23 @@ in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in
 
 [func CreateContainer(create: Create) string](#CreateContainer)
 
+[func CreateFromCC(in: []string) string](#CreateFromCC)
+
 [func CreatePod(create: PodCreate) string](#CreatePod)
 
 [func DeleteStoppedContainers() []string](#DeleteStoppedContainers)
 
 [func DeleteUnusedImages() []string](#DeleteUnusedImages)
 
+[func Diff(name: string) DiffInfo](#Diff)
+
 [func ExportContainer(name: string, path: string) string](#ExportContainer)
 
 [func ExportImage(name: string, destination: string, compress: bool, tags: []string) string](#ExportImage)
+
+[func GenerateKube(name: string, service: bool) KubePodService](#GenerateKube)
+
+[func GenerateSystemd(name: string, restart: string, timeout: int, useName: bool) string](#GenerateSystemd)
 
 [func GetAttachSockets(name: string) Sockets](#GetAttachSockets)
 
@@ -47,6 +61,8 @@ in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in
 
 [func GetContainersByContext(all: bool, latest: bool, args: []string) []string](#GetContainersByContext)
 
+[func GetContainersByStatus(status: []string) Container](#GetContainersByStatus)
+
 [func GetContainersLogs(names: []string, follow: bool, latest: bool, since: string, tail: int, timestamps: bool) LogLine](#GetContainersLogs)
 
 [func GetEvents(filter: []string, since: string, until: string) Event](#GetEvents)
@@ -55,11 +71,15 @@ in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in
 
 [func GetInfo() PodmanInfo](#GetInfo)
 
+[func GetLayersMapWithImageInfo() string](#GetLayersMapWithImageInfo)
+
 [func GetPod(name: string) ListPodData](#GetPod)
 
 [func GetPodStats(name: string) string, ContainerStats](#GetPodStats)
 
 [func GetPodsByContext(all: bool, latest: bool, args: []string) []string](#GetPodsByContext)
+
+[func GetPodsByStatus(statuses: []string) []string](#GetPodsByStatus)
 
 [func GetVersion() string, string, string, string, string, int](#GetVersion)
 
@@ -74,6 +94,8 @@ in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in
 [func ImagesPrune(all: bool) []string](#ImagesPrune)
 
 [func ImportImage(source: string, reference: string, message: string, changes: []string, delete: bool) string](#ImportImage)
+
+[func InitContainer(name: string) string](#InitContainer)
 
 [func InspectContainer(name: string) string](#InspectContainer)
 
@@ -107,6 +129,8 @@ in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in
 
 [func PodStateData(name: string) string](#PodStateData)
 
+[func Ps(opts: PsOpts) PsContainer](#Ps)
+
 [func PullImage(name: string, certDir: string, creds: string, signaturePolicy: string, tlsVerify: ) MoreResponse](#PullImage)
 
 [func PushImage(name: string, tag: string, tlsverify: , signaturePolicy: string, creds: string, certDir: string, compress: bool, format: string, removeSignatures: bool, signBy: string) MoreResponse](#PushImage)
@@ -127,6 +151,8 @@ in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in
 
 [func SendFile(type: string, length: int) string](#SendFile)
 
+[func Spec(name: string) string](#Spec)
+
 [func StartContainer(name: string) string](#StartContainer)
 
 [func StartPod(name: string) string](#StartPod)
@@ -136,6 +162,8 @@ in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in
 [func StopPod(name: string, timeout: int) string](#StopPod)
 
 [func TagImage(name: string, tagged: string) string](#TagImage)
+
+[func Top(nameOrID: string, descriptors: []string) []string](#Top)
 
 [func TopPod(pod: string, latest: bool, descriptors: []string) []string](#TopPod)
 
@@ -171,13 +199,9 @@ in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in
 
 [type Create](#Create)
 
-[type CreateResourceConfig](#CreateResourceConfig)
+[type DiffInfo](#DiffInfo)
 
 [type Event](#Event)
-
-[type IDMap](#IDMap)
-
-[type IDMappingOptions](#IDMappingOptions)
 
 [type Image](#Image)
 
@@ -199,6 +223,8 @@ in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in
 
 [type InfoStore](#InfoStore)
 
+[type KubePodService](#KubePodService)
+
 [type ListPodContainerInfo](#ListPodContainerInfo)
 
 [type ListPodData](#ListPodData)
@@ -215,6 +241,10 @@ in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in
 
 [type PodmanInfo](#PodmanInfo)
 
+[type PsContainer](#PsContainer)
+
+[type PsOpts](#PsOpts)
+
 [type Runlabel](#Runlabel)
 
 [type Sockets](#Sockets)
@@ -229,9 +259,13 @@ in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in
 
 [error ContainerNotFound](#ContainerNotFound)
 
+[error ErrCtrStopped](#ErrCtrStopped)
+
 [error ErrorOccurred](#ErrorOccurred)
 
 [error ImageNotFound](#ImageNotFound)
+
+[error InvalidState](#InvalidState)
 
 [error NoContainerRunning](#NoContainerRunning)
 
@@ -248,6 +282,17 @@ in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in
 [error WantsMoreRequired](#WantsMoreRequired)
 
 ## Methods
+### <a name="Attach"></a>func Attach
+<div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
+
+method Attach(name: [string](https://godoc.org/builtin#string), detachKeys: [string](https://godoc.org/builtin#string), start: [bool](https://godoc.org/builtin#bool)) </div>
+Attach takes the name or ID of a container and sets up a the ability to remotely attach to its console. The start
+bool is whether you wish to start the container in question first.
+### <a name="AttachControl"></a>func AttachControl
+<div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
+
+method AttachControl(name: [string](https://godoc.org/builtin#string)) </div>
+
 ### <a name="BuildImage"></a>func BuildImage
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
@@ -255,6 +300,11 @@ method BuildImage(build: [BuildInfo](#BuildInfo)) [MoreResponse](#MoreResponse)<
 BuildImage takes a [BuildInfo](#BuildInfo) structure and builds an image.  At a minimum, you must provide the
 'dockerfile' and 'tags' options in the BuildInfo structure. It will return a [MoreResponse](#MoreResponse) structure
 that contains the build logs and resulting image ID.
+### <a name="BuildImageHierarchyMap"></a>func BuildImageHierarchyMap
+<div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
+
+method BuildImageHierarchyMap(name: [string](https://godoc.org/builtin#string)) [string](https://godoc.org/builtin#string)</div>
+BuildImageHierarchyMap is for the development of Podman and should not be used.
 ### <a name="Commit"></a>func Commit
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
@@ -325,16 +375,12 @@ development of Podman only and generally should not be used.
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
 method CreateContainer(create: [Create](#Create)) [string](https://godoc.org/builtin#string)</div>
-CreateContainer creates a new container from an image.  It uses a [Create](#Create) type for input. The minimum
-input required for CreateContainer is an image name.  If the image name is not found, an [ImageNotFound](#ImageNotFound)
-error will be returned.  Otherwise, the ID of the newly created container will be returned.
-#### Example
-~~~
-$ varlink call unix:/run/podman/io.podman/io.podman.CreateContainer '{"create": {"image": "alpine"}}'
-{
-  "container": "8759dafbc0a4dc3bcfb57eeb72e4331eb73c5cc09ab968e65ce45b9ad5c4b6bb"
-}
-~~~
+CreateContainer creates a new container from an image.  It uses a [Create](#Create) type for input.
+### <a name="CreateFromCC"></a>func CreateFromCC
+<div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
+
+method CreateFromCC(in: [[]string](#[]string)) [string](https://godoc.org/builtin#string)</div>
+This call is for the development of Podman only and should not be used.
 ### <a name="CreatePod"></a>func CreatePod
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
@@ -388,6 +434,11 @@ $ varlink call -m unix:/run/podman/io.podman/io.podman.DeleteUnusedImages
   ]
 }
 ~~~
+### <a name="Diff"></a>func Diff
+<div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
+
+method Diff(name: [string](https://godoc.org/builtin#string)) [DiffInfo](#DiffInfo)</div>
+Diff returns a diff between libpod objects
 ### <a name="ExportContainer"></a>func ExportContainer
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
@@ -412,6 +463,17 @@ a booleon option to force compression.  It also takes in a string array of tags 
 tags of the same image to a tarball (each tag should be of the form <image>:<tag>).  Upon completion, the ID
 of the image is returned. If the image cannot be found in local storage, an [ImageNotFound](#ImageNotFound)
 error will be returned. See also [ImportImage](ImportImage).
+### <a name="GenerateKube"></a>func GenerateKube
+<div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
+
+method GenerateKube(name: [string](https://godoc.org/builtin#string), service: [bool](https://godoc.org/builtin#bool)) [KubePodService](#KubePodService)</div>
+GenerateKube generates a Kubernetes v1 Pod description of a Podman container or pod
+and its containers. The description is in YAML.  See also [ReplayKube](ReplayKube).
+### <a name="GenerateSystemd"></a>func GenerateSystemd
+<div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
+
+method GenerateSystemd(name: [string](https://godoc.org/builtin#string), restart: [string](https://godoc.org/builtin#string), timeout: [int](https://godoc.org/builtin#int), useName: [bool](https://godoc.org/builtin#bool)) [string](https://godoc.org/builtin#string)</div>
+
 ### <a name="GetAttachSockets"></a>func GetAttachSockets
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
@@ -489,6 +551,11 @@ method GetContainersByContext(all: [bool](https://godoc.org/builtin#bool), lates
 GetContainersByContext allows you to get a list of container ids depending on all, latest, or a list of
 container names.  The definition of latest container means the latest by creation date.  In a multi-
 user environment, results might differ from what you expect.
+### <a name="GetContainersByStatus"></a>func GetContainersByStatus
+<div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
+
+method GetContainersByStatus(status: [[]string](#[]string)) [Container](#Container)</div>
+
 ### <a name="GetContainersLogs"></a>func GetContainersLogs
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
@@ -511,6 +578,11 @@ If the image caGetImage returns be found, [ImageNotFound](#ImageNotFound) will b
 method GetInfo() [PodmanInfo](#PodmanInfo)</div>
 GetInfo returns a [PodmanInfo](#PodmanInfo) struct that describes podman and its host such as storage stats,
 build information of Podman, and system-wide registries.
+### <a name="GetLayersMapWithImageInfo"></a>func GetLayersMapWithImageInfo
+<div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
+
+method GetLayersMapWithImageInfo() [string](https://godoc.org/builtin#string)</div>
+GetLayersMapWithImageInfo is for the development of Podman and should not be used.
 ### <a name="GetPod"></a>func GetPod
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
@@ -583,6 +655,11 @@ method GetPodsByContext(all: [bool](https://godoc.org/builtin#bool), latest: [bo
 GetPodsByContext allows you to get a list pod ids depending on all, latest, or a list of
 pod names.  The definition of latest pod means the latest by creation date.  In a multi-
 user environment, results might differ from what you expect.
+### <a name="GetPodsByStatus"></a>func GetPodsByStatus
+<div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
+
+method GetPodsByStatus(statuses: [[]string](#[]string)) [[]string](#[]string)</div>
+GetPodsByStatus searches for pods whose status is included in statuses
 ### <a name="GetVersion"></a>func GetVersion
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
@@ -631,6 +708,16 @@ the IDs of the removed images are returned.
 method ImportImage(source: [string](https://godoc.org/builtin#string), reference: [string](https://godoc.org/builtin#string), message: [string](https://godoc.org/builtin#string), changes: [[]string](#[]string), delete: [bool](https://godoc.org/builtin#bool)) [string](https://godoc.org/builtin#string)</div>
 ImportImage imports an image from a source (like tarball) into local storage.  The image can have additional
 descriptions added to it using the message and changes options. See also [ExportImage](ExportImage).
+### <a name="InitContainer"></a>func InitContainer
+<div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
+
+method InitContainer(name: [string](https://godoc.org/builtin#string)) [string](https://godoc.org/builtin#string)</div>
+InitContainer initializes the given container. It accepts a container name or
+ID, and will initialize the container matching that ID if possible, and error
+if not. Containers can only be initialized when they are in the Created or
+Exited states. Initialization prepares a container to be started, but does not
+start the container. It is intended to be used to debug a container's state
+prior to starting it.
 ### <a name="InspectContainer"></a>func InspectContainer
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
@@ -826,6 +913,11 @@ $ varlink call -m unix:/run/podman/io.podman/io.podman.PausePod '{"name": "fooba
 method PodStateData(name: [string](https://godoc.org/builtin#string)) [string](https://godoc.org/builtin#string)</div>
 PodStateData returns inspectr level information of a given pod in string form.  This call is for
 development of Podman only and generally should not be used.
+### <a name="Ps"></a>func Ps
+<div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
+
+method Ps(opts: [PsOpts](#PsOpts)) [PsContainer](#PsContainer)</div>
+
 ### <a name="PullImage"></a>func PullImage
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
@@ -930,6 +1022,11 @@ search results per registry.
 
 method SendFile(type: [string](https://godoc.org/builtin#string), length: [int](https://godoc.org/builtin#int)) [string](https://godoc.org/builtin#string)</div>
 Sendfile allows a remote client to send a file to the host
+### <a name="Spec"></a>func Spec
+<div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
+
+method Spec(name: [string](https://godoc.org/builtin#string)) [string](https://godoc.org/builtin#string)</div>
+Spec returns the oci spec for a container.  This call is for development of Podman only and generally should not be used.
 ### <a name="StartContainer"></a>func StartContainer
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
@@ -991,6 +1088,11 @@ $ varlink call -m unix:/run/podman/io.podman/io.podman.StopPod '{"name": "135d71
 method TagImage(name: [string](https://godoc.org/builtin#string), tagged: [string](https://godoc.org/builtin#string)) [string](https://godoc.org/builtin#string)</div>
 TagImage takes the name or ID of an image in local storage as well as the desired tag name.  If the image cannot
 be found, an [ImageNotFound](#ImageNotFound) error will be returned; otherwise, the ID of the image is returned on success.
+### <a name="Top"></a>func Top
+<div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
+
+method Top(nameOrID: [string](https://godoc.org/builtin#string), descriptors: [[]string](#[]string)) [[]string](#[]string)</div>
+
 ### <a name="TopPod"></a>func TopPod
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
@@ -1249,188 +1351,208 @@ block_input [int](https://godoc.org/builtin#int)
 pids [int](https://godoc.org/builtin#int)
 ### <a name="Create"></a>type Create
 
-Create is an input structure for creating containers. It closely resembles the
-CreateConfig structure in libpod/pkg/spec.
+Create is an input structure for creating containers.
 
 args [[]string](#[]string)
 
-cap_add [[]string](#[]string)
+addHost [](#)
 
-cap_drop [[]string](#[]string)
+annotation [](#)
 
-conmon_pidfile [string](https://godoc.org/builtin#string)
+attach [](#)
 
-cgroup_parent [string](https://godoc.org/builtin#string)
+blkioWeight [](#)
 
-command [[]string](#[]string)
+blkioWeightDevice [](#)
 
-detach [bool](https://godoc.org/builtin#bool)
+capAdd [](#)
 
-devices [[]string](#[]string)
+capDrop [](#)
 
-dns_opt [[]string](#[]string)
+cgroupParent [](#)
 
-dns_search [[]string](#[]string)
+cidFile [](#)
 
-dns_servers [[]string](#[]string)
+conmonPidfile [](#)
 
-entrypoint [[]string](#[]string)
+command [](#)
 
-env [map[string]](#map[string])
+cpuPeriod [](#)
 
-exposed_ports [[]string](#[]string)
+cpuQuota [](#)
 
-gidmap [[]string](#[]string)
+cpuRtPeriod [](#)
 
-group_add [[]string](#[]string)
+cpuRtRuntime [](#)
 
-host_add [[]string](#[]string)
+cpuShares [](#)
 
-hostname [string](https://godoc.org/builtin#string)
+cpus [](#)
 
-image [string](https://godoc.org/builtin#string)
+cpuSetCpus [](#)
 
-image_id [string](https://godoc.org/builtin#string)
+cpuSetMems [](#)
 
-init [bool](https://godoc.org/builtin#bool)
+detach [](#)
 
-init_path [string](https://godoc.org/builtin#string)
+detachKeys [](#)
 
-builtin_imgvolumes [[]string](#[]string)
+device [](#)
 
-id_mappings [IDMappingOptions](#IDMappingOptions)
+deviceReadBps [](#)
 
-image_volume_type [string](https://godoc.org/builtin#string)
+deviceReadIops [](#)
 
-interactive [bool](https://godoc.org/builtin#bool)
+deviceWriteBps [](#)
 
-ipc_mode [string](https://godoc.org/builtin#string)
+deviceWriteIops [](#)
 
-labels [map[string]](#map[string])
+dns [](#)
 
-log_driver [string](https://godoc.org/builtin#string)
+dnsOpt [](#)
 
-log_driver_opt [[]string](#[]string)
+dnsSearch [](#)
 
-name [string](https://godoc.org/builtin#string)
+dnsServers [](#)
 
-net_mode [string](https://godoc.org/builtin#string)
+entrypoint [](#)
 
-network [string](https://godoc.org/builtin#string)
+env [](#)
 
-pid_mode [string](https://godoc.org/builtin#string)
+envFile [](#)
 
-pod [string](https://godoc.org/builtin#string)
+expose [](#)
 
-privileged [bool](https://godoc.org/builtin#bool)
+gidmap [](#)
 
-publish [[]string](#[]string)
+groupadd [](#)
 
-publish_all [bool](https://godoc.org/builtin#bool)
+healthcheckCommand [](#)
 
-quiet [bool](https://godoc.org/builtin#bool)
+healthcheckInterval [](#)
 
-readonly_rootfs [bool](https://godoc.org/builtin#bool)
+healthcheckRetries [](#)
 
-resources [CreateResourceConfig](#CreateResourceConfig)
+healthcheckStartPeriod [](#)
 
-rm [bool](https://godoc.org/builtin#bool)
+healthcheckTimeout [](#)
 
-shm_dir [string](https://godoc.org/builtin#string)
+hostname [](#)
 
-stop_signal [int](https://godoc.org/builtin#int)
+imageVolume [](#)
 
-stop_timeout [int](https://godoc.org/builtin#int)
+init [](#)
 
-subuidmap [string](https://godoc.org/builtin#string)
+initPath [](#)
 
-subgidmap [string](https://godoc.org/builtin#string)
+interactive [](#)
 
-subuidname [string](https://godoc.org/builtin#string)
+ip [](#)
 
-subgidname [string](https://godoc.org/builtin#string)
+ipc [](#)
 
-sys_ctl [map[string]](#map[string])
+kernelMemory [](#)
 
-tmpfs [[]string](#[]string)
+label [](#)
 
-tty [bool](https://godoc.org/builtin#bool)
+labelFile [](#)
 
-uidmap [[]string](#[]string)
+logDriver [](#)
 
-userns_mode [string](https://godoc.org/builtin#string)
+logOpt [](#)
 
-user [string](https://godoc.org/builtin#string)
+macAddress [](#)
 
-uts_mode [string](https://godoc.org/builtin#string)
+memory [](#)
 
-volumes [[]string](#[]string)
+memoryReservation [](#)
 
-work_dir [string](https://godoc.org/builtin#string)
+memorySwap [](#)
 
-mount_label [string](https://godoc.org/builtin#string)
+memorySwappiness [](#)
 
-process_label [string](https://godoc.org/builtin#string)
+name [](#)
 
-no_new_privs [bool](https://godoc.org/builtin#bool)
+net [](#)
 
-apparmor_profile [string](https://godoc.org/builtin#string)
+network [](#)
 
-seccomp_profile_path [string](https://godoc.org/builtin#string)
+noHosts [](#)
 
-security_opts [[]string](#[]string)
-### <a name="CreateResourceConfig"></a>type CreateResourceConfig
+oomKillDisable [](#)
 
-CreateResourceConfig is an input structure used to describe host attributes during
-container creation.  It is only valid inside a [Create](#Create) type.
+oomScoreAdj [](#)
 
-blkio_weight [int](https://godoc.org/builtin#int)
+pid [](#)
 
-blkio_weight_device [[]string](#[]string)
+pidsLimit [](#)
 
-cpu_period [int](https://godoc.org/builtin#int)
+pod [](#)
 
-cpu_quota [int](https://godoc.org/builtin#int)
+privileged [](#)
 
-cpu_rt_period [int](https://godoc.org/builtin#int)
+publish [](#)
 
-cpu_rt_runtime [int](https://godoc.org/builtin#int)
+publishAll [](#)
 
-cpu_shares [int](https://godoc.org/builtin#int)
+quiet [](#)
 
-cpus [float](https://golang.org/src/builtin/builtin.go#L58)
+readonly [](#)
 
-cpuset_cpus [string](https://godoc.org/builtin#string)
+readonlytmpfs [](#)
 
-cpuset_mems [string](https://godoc.org/builtin#string)
+restart [](#)
 
-device_read_bps [[]string](#[]string)
+rm [](#)
 
-device_read_iops [[]string](#[]string)
+rootfs [](#)
 
-device_write_bps [[]string](#[]string)
+securityOpt [](#)
 
-device_write_iops [[]string](#[]string)
+shmSize [](#)
 
-disable_oomkiller [bool](https://godoc.org/builtin#bool)
+stopSignal [](#)
 
-kernel_memory [int](https://godoc.org/builtin#int)
+stopTimeout [](#)
 
-memory [int](https://godoc.org/builtin#int)
+storageOpt [](#)
 
-memory_reservation [int](https://godoc.org/builtin#int)
+subuidname [](#)
 
-memory_swap [int](https://godoc.org/builtin#int)
+subgidname [](#)
 
-memory_swappiness [int](https://godoc.org/builtin#int)
+sysctl [](#)
 
-oom_score_adj [int](https://godoc.org/builtin#int)
+systemd [](#)
 
-pids_limit [int](https://godoc.org/builtin#int)
+tmpfs [](#)
 
-shm_size [int](https://godoc.org/builtin#int)
+tty [](#)
 
-ulimit [[]string](#[]string)
+uidmap [](#)
+
+ulimit [](#)
+
+user [](#)
+
+userns [](#)
+
+uts [](#)
+
+mount [](#)
+
+volume [](#)
+
+volumesFrom [](#)
+
+workDir [](#)
+### <a name="DiffInfo"></a>type DiffInfo
+
+
+
+path [string](https://godoc.org/builtin#string)
+
+changeType [string](https://godoc.org/builtin#string)
 ### <a name="Event"></a>type Event
 
 Event describes a libpod struct
@@ -1446,26 +1568,6 @@ status [string](https://godoc.org/builtin#string)
 time [string](https://godoc.org/builtin#string)
 
 type [string](https://godoc.org/builtin#string)
-### <a name="IDMap"></a>type IDMap
-
-IDMap is used to describe user name spaces during container creation
-
-container_id [int](https://godoc.org/builtin#int)
-
-host_id [int](https://godoc.org/builtin#int)
-
-size [int](https://godoc.org/builtin#int)
-### <a name="IDMappingOptions"></a>type IDMappingOptions
-
-IDMappingOptions is an input structure used to described ids during container creation.
-
-host_uid_mapping [bool](https://godoc.org/builtin#bool)
-
-host_gid_mapping [bool](https://godoc.org/builtin#bool)
-
-uid_map [IDMap](#IDMap)
-
-gid_map [IDMap](#IDMap)
 ### <a name="Image"></a>type Image
 
 
@@ -1491,6 +1593,8 @@ containers [int](https://godoc.org/builtin#int)
 labels [map[string]](#map[string])
 
 isParent [bool](https://godoc.org/builtin#bool)
+
+topLayer [string](https://godoc.org/builtin#string)
 ### <a name="ImageHistory"></a>type ImageHistory
 
 ImageHistory describes the returned structure from ImageHistory.
@@ -1618,6 +1722,13 @@ graph_root [string](https://godoc.org/builtin#string)
 graph_status [InfoGraphStatus](#InfoGraphStatus)
 
 run_root [string](https://godoc.org/builtin#string)
+### <a name="KubePodService"></a>type KubePodService
+
+
+
+pod [string](https://godoc.org/builtin#string)
+
+service [string](https://godoc.org/builtin#string)
 ### <a name="ListPodContainerInfo"></a>type ListPodContainerInfo
 
 ListPodContainerInfo is a returned struct for describing containers
@@ -1713,6 +1824,82 @@ insecure_registries [[]string](#[]string)
 store [InfoStore](#InfoStore)
 
 podman [InfoPodmanBinary](#InfoPodmanBinary)
+### <a name="PsContainer"></a>type PsContainer
+
+
+
+id [string](https://godoc.org/builtin#string)
+
+image [string](https://godoc.org/builtin#string)
+
+command [string](https://godoc.org/builtin#string)
+
+created [string](https://godoc.org/builtin#string)
+
+ports [string](https://godoc.org/builtin#string)
+
+names [string](https://godoc.org/builtin#string)
+
+isInfra [bool](https://godoc.org/builtin#bool)
+
+status [string](https://godoc.org/builtin#string)
+
+state [string](https://godoc.org/builtin#string)
+
+pidNum [int](https://godoc.org/builtin#int)
+
+rootFsSize [int](https://godoc.org/builtin#int)
+
+rwSize [int](https://godoc.org/builtin#int)
+
+pod [string](https://godoc.org/builtin#string)
+
+createdAt [string](https://godoc.org/builtin#string)
+
+exitedAt [string](https://godoc.org/builtin#string)
+
+startedAt [string](https://godoc.org/builtin#string)
+
+labels [map[string]](#map[string])
+
+nsPid [string](https://godoc.org/builtin#string)
+
+cgroup [string](https://godoc.org/builtin#string)
+
+ipc [string](https://godoc.org/builtin#string)
+
+mnt [string](https://godoc.org/builtin#string)
+
+net [string](https://godoc.org/builtin#string)
+
+pidNs [string](https://godoc.org/builtin#string)
+
+user [string](https://godoc.org/builtin#string)
+
+uts [string](https://godoc.org/builtin#string)
+
+mounts [string](https://godoc.org/builtin#string)
+### <a name="PsOpts"></a>type PsOpts
+
+
+
+all [bool](https://godoc.org/builtin#bool)
+
+filters [](#)
+
+last [](#)
+
+latest [](#)
+
+noTrunc [](#)
+
+pod [](#)
+
+quiet [](#)
+
+sort [](#)
+
+sync [](#)
 ### <a name="Runlabel"></a>type Runlabel
 
 Runlabel describes the required input for container runlabel
@@ -1793,6 +1980,9 @@ force [bool](https://godoc.org/builtin#bool)
 ### <a name="ContainerNotFound"></a>type ContainerNotFound
 
 ContainerNotFound means the container could not be found by the provided name or ID in local storage.
+### <a name="ErrCtrStopped"></a>type ErrCtrStopped
+
+Container is already stopped
 ### <a name="ErrorOccurred"></a>type ErrorOccurred
 
 ErrorOccurred is a generic error for an error that occurs during the execution.  The actual error message
@@ -1800,6 +1990,9 @@ is includes as part of the error's text.
 ### <a name="ImageNotFound"></a>type ImageNotFound
 
 ImageNotFound means the image could not be found by the provided name or ID in local storage.
+### <a name="InvalidState"></a>type InvalidState
+
+InvalidState indicates that a container or pod was in an improper state for the requested operation
 ### <a name="NoContainerRunning"></a>type NoContainerRunning
 
 NoContainerRunning means none of the containers requested are running in a command that requires a running container.
@@ -1809,7 +2002,7 @@ NoContainersInPod means a pod has no containers on which to perform the operatio
 the pod ID.
 ### <a name="PodContainerError"></a>type PodContainerError
 
-PodContainerError means a container associated with a pod failed to preform an operation. It contains
+PodContainerError means a container associated with a pod failed to perform an operation. It contains
 a container ID of the container that failed.
 ### <a name="PodNotFound"></a>type PodNotFound
 

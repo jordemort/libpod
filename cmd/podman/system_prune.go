@@ -29,6 +29,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pruneSystemCommand.InputArgs = args
 			pruneSystemCommand.GlobalFlags = MainGlobalOpts
+			pruneSystemCommand.Remote = remoteclient
 			return pruneSystemCmd(&pruneSystemCommand)
 		},
 	}
@@ -58,6 +59,7 @@ func pruneSystemCmd(c *cliconfig.SystemPruneValues) error {
 		fmt.Printf(`
 WARNING! This will remove:
         - all stopped containers%s
+        - all stopped pods
         - all dangling images
         - all build cache
 Are you sure you want to continue? [y/N] `, volumeString)
@@ -70,15 +72,32 @@ Are you sure you want to continue? [y/N] `, volumeString)
 		}
 	}
 
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}
 	defer runtime.Shutdown(false)
 
+	rmWorkers := shared.Parallelize("rm")
 	ctx := getContext()
 	fmt.Println("Deleted Containers")
-	lasterr := pruneContainers(runtime, ctx, shared.Parallelize("rm"), false, false)
+	ok, failures, lasterr := runtime.Prune(ctx, rmWorkers, false)
+	printCmdResults(ok, failures)
+
+	fmt.Println("Deleted Pods")
+	pruneValues := cliconfig.PodPruneValues{
+		PodmanCommand: c.PodmanCommand,
+		Force:         c.Force,
+	}
+	ok, failures, err = runtime.PrunePods(ctx, &pruneValues)
+	if err != nil {
+		if lasterr != nil {
+			logrus.Errorf("%q", lasterr)
+		}
+		lasterr = err
+	}
+	printCmdResults(ok, failures)
+
 	if c.Bool("volumes") {
 		fmt.Println("Deleted Volumes")
 		err := volumePrune(runtime, getContext())
@@ -92,7 +111,7 @@ Are you sure you want to continue? [y/N] `, volumeString)
 
 	// Call prune; if any cids are returned, print them and then
 	// return err in case an error also came up
-	pruneCids, err := runtime.PruneImages(c.All)
+	pruneCids, err := runtime.PruneImages(ctx, c.All)
 	if len(pruneCids) > 0 {
 		fmt.Println("Deleted Images")
 		for _, cid := range pruneCids {

@@ -29,6 +29,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			searchCommand.InputArgs = args
 			searchCommand.GlobalFlags = MainGlobalOpts
+			searchCommand.Remote = remoteclient
 			return searchCmd(&searchCommand)
 		},
 		Example: `podman search --filter=is-official --limit 3 alpine
@@ -83,9 +84,23 @@ func searchCmd(c *cliconfig.SearchValues) error {
 	if len(results) == 0 {
 		return nil
 	}
-	out := formats.StdoutTemplateArray{Output: searchToGeneric(results), Template: format, Fields: genSearchOutputMap()}
+	out := formats.StdoutTemplateArray{Output: searchToGeneric(results), Template: format, Fields: searchHeaderMap()}
 	formats.Writer(out).Out()
 	return nil
+}
+
+// searchHeaderMap returns the headers of a SearchResult.
+func searchHeaderMap() map[string]string {
+	s := new(image.SearchResult)
+	v := reflect.Indirect(reflect.ValueOf(s))
+	values := make(map[string]string, v.NumField())
+
+	for i := 0; i < v.NumField(); i++ {
+		key := v.Type().Field(i).Name
+		value := key
+		values[key] = strings.ToUpper(splitCamelCase(value))
+	}
+	return values
 }
 
 func genSearchFormat(format string) string {
@@ -102,17 +117,4 @@ func searchToGeneric(params []image.SearchResult) (genericParams []interface{}) 
 		genericParams = append(genericParams, interface{}(v))
 	}
 	return genericParams
-}
-
-func genSearchOutputMap() map[string]string {
-	io := image.SearchResult{}
-	v := reflect.Indirect(reflect.ValueOf(io))
-	values := make(map[string]string)
-
-	for i := 0; i < v.NumField(); i++ {
-		key := v.Type().Field(i).Name
-		value := key
-		values[key] = strings.ToUpper(splitCamelCase(value))
-	}
-	return values
 }

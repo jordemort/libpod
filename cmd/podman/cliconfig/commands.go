@@ -1,6 +1,8 @@
 package cliconfig
 
-import "github.com/sirupsen/logrus"
+import (
+	"github.com/sirupsen/logrus"
+)
 
 // GlobalIsSet is a compatibility method for urfave
 func (p *PodmanCommand) GlobalIsSet(opt string) bool {
@@ -24,7 +26,9 @@ func (p *PodmanCommand) IsSet(opt string) bool {
 func (p *PodmanCommand) Bool(opt string) bool {
 	flag := p.Flags().Lookup(opt)
 	if flag == nil {
-		logrus.Errorf("Could not find flag %s", opt)
+		if !p.Remote {
+			logrus.Errorf("Could not find flag %s", opt)
+		}
 		return false
 	}
 	val, err := p.Flags().GetBool(opt)
@@ -38,7 +42,9 @@ func (p *PodmanCommand) Bool(opt string) bool {
 func (p *PodmanCommand) String(opt string) string {
 	flag := p.Flags().Lookup(opt)
 	if flag == nil {
-		logrus.Errorf("Could not find flag %s", opt)
+		if !p.Remote {
+			logrus.Errorf("Could not find flag %s", opt)
+		}
 		return ""
 	}
 	val, err := p.Flags().GetString(opt)
@@ -52,7 +58,9 @@ func (p *PodmanCommand) String(opt string) string {
 func (p *PodmanCommand) StringArray(opt string) []string {
 	flag := p.Flags().Lookup(opt)
 	if flag == nil {
-		logrus.Errorf("Could not find flag %s", opt)
+		if !p.Remote {
+			logrus.Errorf("Could not find flag %s", opt)
+		}
 		return []string{}
 	}
 	val, err := p.Flags().GetStringArray(opt)
@@ -66,7 +74,9 @@ func (p *PodmanCommand) StringArray(opt string) []string {
 func (p *PodmanCommand) StringSlice(opt string) []string {
 	flag := p.Flags().Lookup(opt)
 	if flag == nil {
-		logrus.Errorf("Could not find flag %s", opt)
+		if !p.Remote {
+			logrus.Errorf("Could not find flag %s", opt)
+		}
 		return []string{}
 	}
 	val, err := p.Flags().GetStringSlice(opt)
@@ -80,7 +90,9 @@ func (p *PodmanCommand) StringSlice(opt string) []string {
 func (p *PodmanCommand) Int(opt string) int {
 	flag := p.Flags().Lookup(opt)
 	if flag == nil {
-		logrus.Errorf("Could not find flag %s", opt)
+		if !p.Remote {
+			logrus.Errorf("Could not find flag %s", opt)
+		}
 		return 0
 	}
 	val, err := p.Flags().GetInt(opt)
@@ -94,7 +106,9 @@ func (p *PodmanCommand) Int(opt string) int {
 func (p *PodmanCommand) Uint(opt string) uint {
 	flag := p.Flags().Lookup(opt)
 	if flag == nil {
-		logrus.Errorf("Could not find flag %s", opt)
+		if !p.Remote {
+			logrus.Errorf("Could not find flag %s", opt)
+		}
 		return 0
 	}
 	val, err := p.Flags().GetUint(opt)
@@ -108,7 +122,9 @@ func (p *PodmanCommand) Uint(opt string) uint {
 func (p *PodmanCommand) Int64(opt string) int64 {
 	flag := p.Flags().Lookup(opt)
 	if flag == nil {
-		logrus.Errorf("Could not find flag %s", opt)
+		if !p.Remote {
+			logrus.Errorf("Could not find flag %s", opt)
+		}
 		return 0
 	}
 	val, err := p.Flags().GetInt64(opt)
@@ -122,7 +138,9 @@ func (p *PodmanCommand) Int64(opt string) int64 {
 func (p *PodmanCommand) Uint64(opt string) uint64 {
 	flag := p.Flags().Lookup(opt)
 	if flag == nil {
-		logrus.Errorf("Could not find flag %s", opt)
+		if !p.Remote {
+			logrus.Errorf("Could not find flag %s", opt)
+		}
 		return 0
 	}
 	val, err := p.Flags().GetUint64(opt)
@@ -136,7 +154,9 @@ func (p *PodmanCommand) Uint64(opt string) uint64 {
 func (p *PodmanCommand) Float64(opt string) float64 {
 	flag := p.Flags().Lookup(opt)
 	if flag == nil {
-		logrus.Errorf("Could not find flag %s", opt)
+		if !p.Remote {
+			logrus.Errorf("Could not find flag %s", opt)
+		}
 		return 0
 	}
 	val, err := p.Flags().GetFloat64(opt)

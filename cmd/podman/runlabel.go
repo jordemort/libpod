@@ -12,6 +12,7 @@ import (
 	"github.com/containers/libpod/cmd/podman/shared"
 	"github.com/containers/libpod/libpod"
 	"github.com/containers/libpod/libpod/image"
+	"github.com/containers/libpod/pkg/util"
 	"github.com/containers/libpod/utils"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -30,6 +31,7 @@ Executes a command as described by a container image label.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runlabelCommand.InputArgs = args
 			runlabelCommand.GlobalFlags = MainGlobalOpts
+			runlabelCommand.Remote = remoteclient
 			return runlabelCmd(&runlabelCommand)
 		},
 		Example: `podman container runlabel run imageID
@@ -84,7 +86,7 @@ func runlabelCmd(c *cliconfig.RunlabelValues) error {
 	}
 
 	opts := make(map[string]string)
-	runtime, err := libpodruntime.GetRuntime(&c.PodmanCommand)
+	runtime, err := libpodruntime.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}
@@ -144,7 +146,8 @@ func runlabelCmd(c *cliconfig.RunlabelValues) error {
 		return errors.Errorf("%s does not have a label of %s", runlabelImage, label)
 	}
 
-	cmd, env, err := shared.GenerateRunlabelCommand(runLabel, imageName, c.Name, opts, extraArgs)
+	globalOpts := util.GetGlobalOpts(c)
+	cmd, env, err := shared.GenerateRunlabelCommand(runLabel, imageName, c.Name, opts, extraArgs, globalOpts)
 	if err != nil {
 		return err
 	}

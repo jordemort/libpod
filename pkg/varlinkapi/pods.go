@@ -1,10 +1,11 @@
+// +build varlink
+
 package varlinkapi
 
 import (
 	"encoding/json"
 	"fmt"
 	"github.com/containers/libpod/pkg/adapter/shortcuts"
-	"github.com/containers/libpod/pkg/rootless"
 	"syscall"
 
 	"github.com/containers/libpod/cmd/podman/shared"
@@ -35,12 +36,9 @@ func (i *LibpodAPI) CreatePod(call iopodman.VarlinkCall, create iopodman.PodCrea
 		if !create.Infra {
 			return call.ReplyErrorOccurred("you must have an infra container to publish port bindings to the host")
 		}
-		if rootless.IsRootless() {
-			return call.ReplyErrorOccurred("rootless networking does not allow port binding to the host")
-		}
 		portBindings, err := shared.CreatePortBindings(create.Publish)
 		if err != nil {
-			return err
+			return call.ReplyErrorOccurred(err.Error())
 		}
 		options = append(options, libpod.WithInfraContainerPorts(portBindings))
 
@@ -97,6 +95,28 @@ func (i *LibpodAPI) GetPod(call iopodman.VarlinkCall, name string) error {
 	}
 
 	return call.ReplyGetPod(listPod)
+}
+
+// GetPodsByStatus returns a slice of pods filtered by a libpod status
+func (i *LibpodAPI) GetPodsByStatus(call iopodman.VarlinkCall, statuses []string) error {
+	filterFuncs := func(p *libpod.Pod) bool {
+		state, _ := shared.GetPodStatus(p)
+		for _, status := range statuses {
+			if state == status {
+				return true
+			}
+		}
+		return false
+	}
+	filteredPods, err := i.Runtime.Pods(filterFuncs)
+	if err != nil {
+		return call.ReplyErrorOccurred(err.Error())
+	}
+	podIDs := make([]string, 0, len(filteredPods))
+	for _, p := range filteredPods {
+		podIDs = append(podIDs, p.ID())
+	}
+	return call.ReplyGetPodsByStatus(podIDs)
 }
 
 // InspectPod ...

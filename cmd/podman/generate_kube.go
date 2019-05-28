@@ -3,14 +3,11 @@ package main
 import (
 	"fmt"
 	"github.com/containers/libpod/cmd/podman/cliconfig"
-	"github.com/containers/libpod/cmd/podman/libpodruntime"
-	"github.com/containers/libpod/libpod"
-	"github.com/containers/libpod/pkg/rootless"
+	"github.com/containers/libpod/pkg/adapter"
 	podmanVersion "github.com/containers/libpod/version"
 	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"k8s.io/api/core/v1"
 )
 
 var (
@@ -25,6 +22,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			containerKubeCommand.InputArgs = args
 			containerKubeCommand.GlobalFlags = MainGlobalOpts
+			containerKubeCommand.Remote = remoteclient
 			return generateKubeYAMLCmd(&containerKubeCommand)
 		},
 		Example: `podman generate kube ctrID
@@ -43,61 +41,40 @@ func init() {
 
 func generateKubeYAMLCmd(c *cliconfig.GenerateKubeValues) error {
 	var (
-		podYAML           *v1.Pod
-		container         *libpod.Container
-		err               error
-		output            []byte
-		pod               *libpod.Pod
+		//podYAML           *v1.Pod
+		err    error
+		output []byte
+		//pod               *libpod.Pod
 		marshalledPod     []byte
 		marshalledService []byte
-		servicePorts      []v1.ServicePort
 	)
 
-	if rootless.IsRootless() {
-		return errors.Wrapf(libpod.ErrNotImplemented, "rootless users")
-	}
 	args := c.InputArgs
 	if len(args) != 1 {
 		return errors.Errorf("you must provide exactly one container|pod ID or name")
 	}
 
-	runtime, err := libpodruntime.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}
 	defer runtime.Shutdown(false)
 
-	// Get the container in question
-	container, err = runtime.LookupContainer(args[0])
-	if err != nil {
-		pod, err = runtime.LookupPod(args[0])
-		if err != nil {
-			return err
-		}
-		podYAML, servicePorts, err = pod.GenerateForKube()
-	} else {
-		if len(container.Dependencies()) > 0 {
-			return errors.Wrapf(libpod.ErrNotImplemented, "containers with dependencies")
-		}
-		podYAML, err = container.GenerateForKube()
-	}
+	podYAML, serviceYAML, err := runtime.GenerateKube(c)
 	if err != nil {
 		return err
-	}
-
-	if c.Service {
-		serviceYAML := libpod.GenerateKubeServiceFromV1Pod(podYAML, servicePorts)
-		marshalledService, err = yaml.Marshal(serviceYAML)
-		if err != nil {
-			return err
-		}
 	}
 	// Marshall the results
 	marshalledPod, err = yaml.Marshal(podYAML)
 	if err != nil {
 		return err
 	}
-
+	if c.Service {
+		marshalledService, err = yaml.Marshal(serviceYAML)
+		if err != nil {
+			return err
+		}
+	}
 	header := `# Generation of Kubernetes YAML is still under development!
 #
 # Save the output of this file and use kubectl create -f to import

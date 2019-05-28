@@ -10,7 +10,6 @@ import (
 	"github.com/containers/libpod/cmd/podman/libpodruntime"
 	"github.com/containers/libpod/cmd/podman/shared/parse"
 	"github.com/containers/libpod/libpod"
-	"github.com/containers/libpod/pkg/rootless"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -27,6 +26,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			execCommand.InputArgs = args
 			execCommand.GlobalFlags = MainGlobalOpts
+			execCommand.Remote = remoteclient
 			return execCmd(&execCommand)
 		},
 		Example: `podman exec -it ctrID ls
@@ -67,9 +67,8 @@ func execCmd(c *cliconfig.ExecValues) error {
 	if c.Latest {
 		argStart = 0
 	}
-	rootless.SetSkipStorageSetup(true)
 	cmd := args[argStart:]
-	runtime, err := libpodruntime.GetRuntime(&c.PodmanCommand)
+	runtime, err := libpodruntime.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "error creating libpod runtime")
 	}
@@ -105,32 +104,6 @@ func execCmd(c *cliconfig.ExecValues) error {
 			}
 		}
 
-	}
-
-	if os.Geteuid() != 0 {
-		var became bool
-		var ret int
-
-		data, err := ioutil.ReadFile(ctr.Config().ConmonPidFile)
-		if err == nil {
-			conmonPid, err := strconv.Atoi(string(data))
-			if err != nil {
-				return errors.Wrapf(err, "cannot parse PID %q", data)
-			}
-			became, ret, err = rootless.JoinDirectUserAndMountNS(uint(conmonPid))
-		} else {
-			pid, err := ctr.PID()
-			if err != nil {
-				return err
-			}
-			became, ret, err = rootless.JoinNS(uint(pid), c.PreserveFDs)
-		}
-		if err != nil {
-			return err
-		}
-		if became {
-			os.Exit(ret)
-		}
 	}
 
 	// ENVIRONMENT VARIABLES

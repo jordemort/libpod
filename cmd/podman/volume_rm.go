@@ -22,6 +22,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			volumeRmCommand.InputArgs = args
 			volumeRmCommand.GlobalFlags = MainGlobalOpts
+			volumeRmCommand.Remote = remoteclient
 			return volumeRmCmd(&volumeRmCommand)
 		},
 		Example: `podman volume rm myvol1 myvol2
@@ -46,7 +47,7 @@ func volumeRmCmd(c *cliconfig.VolumeRmValues) error {
 		return errors.New("choose either one or more volumes or all")
 	}
 
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "error creating libpod runtime")
 	}

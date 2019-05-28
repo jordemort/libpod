@@ -30,6 +30,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			podCreateCommand.InputArgs = args
 			podCreateCommand.GlobalFlags = MainGlobalOpts
+			podCreateCommand.Remote = remoteclient
 			return podCreateCmd(&podCreateCommand)
 		},
 	}
@@ -61,7 +62,7 @@ func podCreateCmd(c *cliconfig.PodCreateValues) error {
 		podIdFile *os.File
 	)
 
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "error creating libpod runtime")
 	}

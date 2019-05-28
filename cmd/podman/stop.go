@@ -1,13 +1,9 @@
 package main
 
 import (
-	"fmt"
-	"reflect"
-
 	"github.com/containers/libpod/cmd/podman/cliconfig"
 	"github.com/containers/libpod/libpod"
 	"github.com/containers/libpod/pkg/adapter"
-	"github.com/containers/libpod/pkg/rootless"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -25,6 +21,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			stopCommand.InputArgs = args
 			stopCommand.GlobalFlags = MainGlobalOpts
+			stopCommand.Remote = remoteclient
 			return stopCmd(&stopCommand)
 		},
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -59,8 +56,7 @@ func stopCmd(c *cliconfig.StopValues) error {
 		defer span.Finish()
 	}
 
-	rootless.SetSkipStorageSetup(true)
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}
@@ -70,21 +66,5 @@ func stopCmd(c *cliconfig.StopValues) error {
 	if err != nil {
 		return err
 	}
-
-	for _, id := range ok {
-		fmt.Println(id)
-	}
-
-	if len(failures) > 0 {
-		keys := reflect.ValueOf(failures).MapKeys()
-		lastKey := keys[len(keys)-1].String()
-		lastErr := failures[lastKey]
-		delete(failures, lastKey)
-
-		for _, err := range failures {
-			outputError(err)
-		}
-		return lastErr
-	}
-	return nil
+	return printCmdResults(ok, failures)
 }

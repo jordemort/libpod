@@ -117,6 +117,31 @@ var _ = Describe("Podman commit", func() {
 		Expect(foundBlue).To(Equal(true))
 	})
 
+	It("podman commit container with change CMD flag", func() {
+		test := podmanTest.Podman([]string{"run", "--name", "test1", "-d", ALPINE, "ls"})
+		test.WaitWithDefaultTimeout()
+		Expect(test.ExitCode()).To(Equal(0))
+		Expect(podmanTest.NumberOfContainers()).To(Equal(1))
+
+		session := podmanTest.Podman([]string{"commit", "--change", "CMD a b c", "test1", "foobar.com/test1-image:latest"})
+		session.WaitWithDefaultTimeout()
+		Expect(session.ExitCode()).To(Equal(0))
+
+		session = podmanTest.Podman([]string{"inspect", "--format", "{{.Config.Cmd}}", "foobar.com/test1-image:latest"})
+		session.WaitWithDefaultTimeout()
+		Expect(session.ExitCode()).To(Equal(0))
+		Expect(session.OutputToString()).To(ContainSubstring("sh -c a b c"))
+
+		session = podmanTest.Podman([]string{"commit", "--change", "CMD=[\"a\",\"b\",\"c\"]", "test1", "foobar.com/test1-image:latest"})
+		session.WaitWithDefaultTimeout()
+		Expect(session.ExitCode()).To(Equal(0))
+
+		session = podmanTest.Podman([]string{"inspect", "--format", "{{.Config.Cmd}}", "foobar.com/test1-image:latest"})
+		session.WaitWithDefaultTimeout()
+		Expect(session.ExitCode()).To(Equal(0))
+		Expect(session.OutputToString()).To(Not(ContainSubstring("sh -c")))
+	})
+
 	It("podman commit container with pause flag", func() {
 		_, ec, _ := podmanTest.RunLsContainer("test1")
 		Expect(ec).To(Equal(0))
@@ -131,7 +156,7 @@ var _ = Describe("Podman commit", func() {
 		Expect(check.ExitCode()).To(Equal(0))
 	})
 
-	It("podman commit with volume mounts", func() {
+	It("podman commit with volumes mounts and no include-volumes", func() {
 		s := podmanTest.Podman([]string{"run", "--name", "test1", "-v", "/tmp:/foo", "alpine", "date"})
 		s.WaitWithDefaultTimeout()
 		Expect(s.ExitCode()).To(Equal(0))
@@ -144,7 +169,24 @@ var _ = Describe("Podman commit", func() {
 		inspect.WaitWithDefaultTimeout()
 		Expect(inspect.ExitCode()).To(Equal(0))
 		image := inspect.InspectImageJSON()
-		_, ok := image[0].Config.Volumes["/tmp"]
+		_, ok := image[0].Config.Volumes["/foo"]
+		Expect(ok).To(BeFalse())
+	})
+
+	It("podman commit with volume mounts and --include-volumes", func() {
+		s := podmanTest.Podman([]string{"run", "--name", "test1", "-v", "/tmp:/foo", "alpine", "date"})
+		s.WaitWithDefaultTimeout()
+		Expect(s.ExitCode()).To(Equal(0))
+
+		c := podmanTest.Podman([]string{"commit", "--include-volumes", "test1", "newimage"})
+		c.WaitWithDefaultTimeout()
+		Expect(c.ExitCode()).To(Equal(0))
+
+		inspect := podmanTest.Podman([]string{"inspect", "newimage"})
+		inspect.WaitWithDefaultTimeout()
+		Expect(inspect.ExitCode()).To(Equal(0))
+		image := inspect.InspectImageJSON()
+		_, ok := image[0].Config.Volumes["/foo"]
 		Expect(ok).To(BeTrue())
 
 		r := podmanTest.Podman([]string{"run", "newimage"})

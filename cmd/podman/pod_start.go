@@ -22,6 +22,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			podStartCommand.InputArgs = args
 			podStartCommand.GlobalFlags = MainGlobalOpts
+			podStartCommand.Remote = remoteclient
 			return podStartCmd(&podStartCommand)
 		},
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -44,7 +45,7 @@ func init() {
 }
 
 func podStartCmd(c *cliconfig.PodStartValues) error {
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}

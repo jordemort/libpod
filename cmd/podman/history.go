@@ -47,6 +47,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			historyCommand.InputArgs = args
 			historyCommand.GlobalFlags = MainGlobalOpts
+			historyCommand.Remote = remoteclient
 			return historyCmd(&historyCommand)
 		},
 	}
@@ -66,7 +67,7 @@ func init() {
 }
 
 func historyCmd(c *cliconfig.HistoryValues) error {
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}

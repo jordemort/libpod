@@ -31,6 +31,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mountCommand.InputArgs = args
 			mountCommand.GlobalFlags = MainGlobalOpts
+			mountCommand.Remote = remoteclient
 			return mountCmd(&mountCommand)
 		},
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -60,11 +61,7 @@ type jsonMountPoint struct {
 }
 
 func mountCmd(c *cliconfig.MountValues) error {
-	if os.Geteuid() != 0 {
-		rootless.SetSkipStorageSetup(true)
-	}
-
-	runtime, err := libpodruntime.GetRuntime(&c.PodmanCommand)
+	runtime, err := libpodruntime.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not get runtime")
 	}

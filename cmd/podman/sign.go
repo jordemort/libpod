@@ -30,6 +30,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			signCommand.InputArgs = args
 			signCommand.GlobalFlags = MainGlobalOpts
+			signCommand.Remote = remoteclient
 			return signCmd(&signCommand)
 		},
 		Example: `podman sign --sign-by mykey imageID
@@ -55,7 +56,7 @@ func signCmd(c *cliconfig.SignValues) error {
 	if len(args) < 1 {
 		return errors.Errorf("at least one image name must be specified")
 	}
-	runtime, err := libpodruntime.GetRuntime(&c.PodmanCommand)
+	runtime, err := libpodruntime.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "could not create runtime")
 	}

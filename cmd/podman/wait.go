@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/containers/libpod/cmd/podman/cliconfig"
@@ -23,6 +21,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			waitCommand.InputArgs = args
 			waitCommand.GlobalFlags = MainGlobalOpts
+			waitCommand.Remote = remoteclient
 			return waitCmd(&waitCommand)
 		},
 		Example: `podman wait --latest
@@ -52,7 +51,7 @@ func waitCmd(c *cliconfig.WaitValues) error {
 	}
 	interval := time.Duration(c.Interval) * time.Millisecond
 
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "error creating runtime")
 	}
@@ -62,21 +61,5 @@ func waitCmd(c *cliconfig.WaitValues) error {
 	if err != nil {
 		return err
 	}
-
-	for _, id := range ok {
-		fmt.Println(id)
-	}
-
-	if len(failures) > 0 {
-		keys := reflect.ValueOf(failures).MapKeys()
-		lastKey := keys[len(keys)-1].String()
-		lastErr := failures[lastKey]
-		delete(failures, lastKey)
-
-		for _, err := range failures {
-			outputError(err)
-		}
-		return lastErr
-	}
-	return nil
+	return printCmdResults(ok, failures)
 }

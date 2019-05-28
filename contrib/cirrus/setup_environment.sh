@@ -4,14 +4,7 @@ set -e
 
 source $(dirname $0)/lib.sh
 
-record_timestamp "env. setup start"
-
-req_env_var "
-USER $USER
-HOME $HOME
-ENVLIB $ENVLIB
-SCRIPT_BASE $SCRIPT_BASE
-CIRRUS_BUILD_ID $CIRRUS_BUILD_ID"
+req_env_var USER HOME ENVLIB SCRIPT_BASE CIRRUS_BUILD_ID
 
 [[ "$SHELL" =~ "bash" ]] || chsh -s /bin/bash
 
@@ -43,7 +36,7 @@ then
         "export OS_RELEASE_ID=\"$(os_release_id)\"" \
         "export OS_RELEASE_VER=\"$(os_release_ver)\"" \
         "export OS_REL_VER=\"$(os_release_id)-$(os_release_ver)\"" \
-        "export ROOTLESS_USER=$ROOTLESS_USER" \
+        "export TEST_REMOTE_CLIENT=\"$TEST_REMOTE_CLIENT\"" \
         "export BUILT_IMAGE_SUFFIX=\"-$CIRRUS_REPO_NAME-${CIRRUS_CHANGE_IN_REPO:0:8}\"" \
         "export GOPATH=\"/var/tmp/go\"" \
         'export PATH="$HOME/bin:$GOPATH/bin:/usr/local/bin:$PATH"' \
@@ -59,11 +52,16 @@ then
             # Always install runc on Ubuntu
             install_runc_from_git
             ;;
-        fedora-29) ;&  # Continue to the next item
+        fedora-29)
+            CON_SEL="https://kojipkgs.fedoraproject.org/packages/container-selinux/2.100/1.git3b78187.fc29/noarch/container-selinux-2.100-1.git3b78187.fc29.noarch.rpm"
+            echo ">>>>> OVERRIDING container-selinux WITH $CON_SEL <<<<<"
+            dnf -y install $CON_SEL
+            echo ">>>>> OVERRIDING criu and selinux-policy with latest package <<<<<"
+            dnf -y upgrade criu selinux-policy
+            ;&  # Continue to the next item
         fedora-28)
-            RUNC="https://kojipkgs.fedoraproject.org/packages/runc/1.0.0/55.dev.git578fe65.fc${OS_RELEASE_VER}/x86_64/runc-1.0.0-55.dev.git578fe65.fc${OS_RELEASE_VER}.x86_64.rpm"
-            echo ">>>>> OVERRIDING RUNC WITH $RUNC <<<<<"
-            dnf -y install "$RUNC"
+            echo ">>>>> OVERRIDING source-built runc with latest package <<<<<"
+            dnf update -y runc
             ;&  # Continue to the next item
         centos-7) ;&
         rhel-7)
@@ -75,16 +73,17 @@ then
     # Reload to incorporate any changes from above
     source "$SCRIPT_BASE/lib.sh"
 
-    if run_rootless
-    then
-        setup_rootless
-        make install.catatonit
-        go get github.com/onsi/ginkgo/ginkgo
-        go get github.com/onsi/gomega/...
-        dnf -y update runc
-    fi
+    case "$SPECIALMODE" in
+        rootless)
+            X=$(echo "export ROOTLESS_USER='some${RANDOM}dude'" | \
+                tee -a "$HOME/$ENVLIB") && eval "$X" && echo "$X"
+            setup_rootless
+            ;;
+        in_podman)  # Assumed to be Fedora
+            dnf install -y podman buildah
+            $SCRIPT_BASE/setup_container_environment.sh
+            ;;
+    esac
 fi
 
 show_env_vars
-
-record_timestamp "env. setup end"

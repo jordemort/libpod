@@ -28,6 +28,7 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			volumePruneCommand.InputArgs = args
 			volumePruneCommand.GlobalFlags = MainGlobalOpts
+			volumePruneCommand.Remote = remoteclient
 			return volumePruneCmd(&volumePruneCommand)
 		},
 	}
@@ -62,7 +63,7 @@ func volumePrune(runtime *adapter.LocalRuntime, ctx context.Context) error {
 }
 
 func volumePruneCmd(c *cliconfig.VolumePruneValues) error {
-	runtime, err := adapter.GetRuntime(&c.PodmanCommand)
+	runtime, err := adapter.GetRuntime(getContext(), &c.PodmanCommand)
 	if err != nil {
 		return errors.Wrapf(err, "error creating libpod runtime")
 	}
