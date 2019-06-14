@@ -91,7 +91,6 @@ Fedora, CentOS, RHEL, and related distributions:
 sudo yum install -y \
   atomic-registries \
   btrfs-progs-devel \
-  conmon \
   containernetworking-cni \
   device-mapper-devel \
   git \
@@ -160,7 +159,7 @@ git submodule update --init
 # for Fedora, CentOS, RHEL
 sudo yum install -y automake bison e2fsprogs-devel fuse-devel libtool xz-devel zlib-devel
 # for Debian, Ubuntu etc.
-sudo apt-get install -y automake bison e2fsprogs fuse liblzma-dev libtool zlib1g
+sudo apt-get install -y automake bison e2fsprogs e2fslibs-dev fuse libfuse-dev libgpgme-dev liblzma-dev libtool zlib1g
 
 ./autogen.sh --prefix=/usr --libdir=/usr/lib64 --sysconfdir=/etc
 # remove --nonet option due to https:/github.com/ostreedev/ostree/issues/1374
@@ -188,13 +187,12 @@ export PATH=$GOPATH/bin:$PATH
 #### conmon
 
 The latest version of `conmon` is expected to be installed on the system. Conmon is used to monitor OCI Runtimes.
-To build from source, use the following (if not already executed above, run `export GOPATH=~/go && mkdir -p $GOPATH`):
+To build from source, use the following:
 
 ```bash
-git clone https://github.com/cri-o/cri-o $GOPATH/src/github.com/cri-o/cri-o
-cd $GOPATH/src/github.com/cri-o/cri-o
-mkdir bin
-make bin/conmon
+git clone https://github.com/containers/conmon
+cd conmon
+make
 sudo install -D -m 755 bin/conmon /usr/libexec/podman/conmon
 ```
 
@@ -275,7 +273,7 @@ First, ensure that the go version that is found first on the $PATH (in case you 
 git clone https://github.com/containers/libpod/ $GOPATH/src/github.com/containers/libpod
 cd $GOPATH/src/github.com/containers/libpod
 make BUILDTAGS="selinux seccomp"
-sudo make install PREFIX=
+sudo make install PREFIX=/usr
 ```
 
 #### Build Tags

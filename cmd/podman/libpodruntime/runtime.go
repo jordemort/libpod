@@ -5,6 +5,7 @@ import (
 
 	"github.com/containers/libpod/cmd/podman/cliconfig"
 	"github.com/containers/libpod/libpod"
+	"github.com/containers/libpod/pkg/namespaces"
 	"github.com/containers/libpod/pkg/rootless"
 	"github.com/containers/libpod/pkg/util"
 	"github.com/containers/storage"
@@ -37,11 +38,12 @@ func getRuntime(ctx context.Context, c *cliconfig.PodmanCommand, renumber bool, 
 	subgidname := c.Flags().Lookup("subgidname")
 	if (uidmapFlag != nil && gidmapFlag != nil && subuidname != nil && subgidname != nil) &&
 		(uidmapFlag.Changed || gidmapFlag.Changed || subuidname.Changed || subgidname.Changed) {
+		userns, _ := c.Flags().GetString("userns")
 		uidmapVal, _ := c.Flags().GetStringSlice("uidmap")
 		gidmapVal, _ := c.Flags().GetStringSlice("gidmap")
 		subuidVal, _ := c.Flags().GetString("subuidname")
 		subgidVal, _ := c.Flags().GetString("subgidname")
-		mappings, err := util.ParseIDMapping(uidmapVal, gidmapVal, subuidVal, subgidVal)
+		mappings, err := util.ParseIDMapping(namespaces.UsernsMode(userns), uidmapVal, gidmapVal, subuidVal, subgidVal)
 		if err != nil {
 			return nil, err
 		}
@@ -107,7 +109,11 @@ func getRuntime(ctx context.Context, c *cliconfig.PodmanCommand, renumber bool, 
 	if c.Flags().Changed("cgroup-manager") {
 		options = append(options, libpod.WithCgroupManager(c.GlobalFlags.CGroupManager))
 	} else {
-		if rootless.IsRootless() {
+		unified, err := util.IsCgroup2UnifiedMode()
+		if err != nil {
+			return nil, err
+		}
+		if rootless.IsRootless() && !unified {
 			options = append(options, libpod.WithCgroupManager("cgroupfs"))
 		}
 	}

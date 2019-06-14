@@ -20,6 +20,7 @@ import (
 	"github.com/containers/image/docker/reference"
 	"github.com/containers/image/types"
 	"github.com/containers/libpod/cmd/podman/cliconfig"
+	"github.com/containers/libpod/cmd/podman/remoteclientconfig"
 	"github.com/containers/libpod/cmd/podman/varlink"
 	"github.com/containers/libpod/libpod"
 	"github.com/containers/libpod/libpod/events"
@@ -40,6 +41,7 @@ type RemoteRuntime struct {
 	Conn   *varlink.Connection
 	Remote bool
 	cmd    cliconfig.MainFlags
+	config io.Reader
 }
 
 // LocalRuntime describes a typical libpod runtime
@@ -49,9 +51,34 @@ type LocalRuntime struct {
 
 // GetRuntime returns a LocalRuntime struct with the actual runtime embedded in it
 func GetRuntime(ctx context.Context, c *cliconfig.PodmanCommand) (*LocalRuntime, error) {
+	var (
+		customConfig bool
+		err          error
+		f            *os.File
+	)
 	runtime := RemoteRuntime{
 		Remote: true,
 		cmd:    c.GlobalFlags,
+	}
+	configPath := remoteclientconfig.GetConfigFilePath()
+	if len(c.GlobalFlags.RemoteConfigFilePath) > 0 {
+		configPath = c.GlobalFlags.RemoteConfigFilePath
+		customConfig = true
+	}
+
+	f, err = os.Open(configPath)
+	if err != nil {
+		// If user does not explicitly provide a configuration file path and we cannot
+		// find a default, no error should occur.
+		if os.IsNotExist(err) && !customConfig {
+			logrus.Debugf("unable to load configuration file at %s", configPath)
+			runtime.config = nil
+		} else {
+			return nil, errors.Wrapf(err, "unable to load configuration file at %s", configPath)
+		}
+	} else {
+		// create the io reader for the remote client
+		runtime.config = bufio.NewReader(f)
 	}
 	conn, err := runtime.Connect()
 	if err != nil {
@@ -182,10 +209,7 @@ func (r *LocalRuntime) NewImageFromLocal(name string) (*ContainerImage, error) {
 // LoadFromArchiveReference creates an image from a local archive
 func (r *LocalRuntime) LoadFromArchiveReference(ctx context.Context, srcRef types.ImageReference, signaturePolicyPath string, writer io.Writer) ([]*ContainerImage, error) {
 	var iid string
-	// TODO We need to find a way to leak certDir, creds, and the tlsverify into this function, normally this would
-	// come from cli options but we don't want want those in here either.
-	tlsverify := true
-	reply, err := iopodman.PullImage().Send(r.Conn, varlink.More, srcRef.DockerReference().String(), "", "", signaturePolicyPath, &tlsverify)
+	reply, err := iopodman.PullImage().Send(r.Conn, varlink.More, srcRef.DockerReference().String())
 	if err != nil {
 		return nil, err
 	}
@@ -217,21 +241,7 @@ func (r *LocalRuntime) New(ctx context.Context, name, signaturePolicyPath, authf
 	if label != nil {
 		return nil, errors.New("the remote client function does not support checking a remote image for a label")
 	}
-	var (
-		tlsVerify    bool
-		tlsVerifyPtr *bool
-	)
-	if dockeroptions.DockerInsecureSkipTLSVerify == types.OptionalBoolFalse {
-		tlsVerify = true
-		tlsVerifyPtr = &tlsVerify
-
-	}
-	if dockeroptions.DockerInsecureSkipTLSVerify == types.OptionalBoolTrue {
-		tlsVerify = false
-		tlsVerifyPtr = &tlsVerify
-	}
-
-	reply, err := iopodman.PullImage().Send(r.Conn, varlink.More, name, dockeroptions.DockerCertPath, "", signaturePolicyPath, tlsVerifyPtr)
+	reply, err := iopodman.PullImage().Send(r.Conn, varlink.More, name)
 	if err != nil {
 		return nil, err
 	}
@@ -429,9 +439,8 @@ func (r *LocalRuntime) Build(ctx context.Context, c *cliconfig.BuildValues, opti
 		Quiet:                  options.Quiet,
 		RemoteIntermediateCtrs: options.RemoveIntermediateCtrs,
 		// ReportWriter:
-		RuntimeArgs:         options.RuntimeArgs,
-		SignaturePolicyPath: options.SignaturePolicyPath,
-		Squash:              options.Squash,
+		RuntimeArgs: options.RuntimeArgs,
+		Squash:      options.Squash,
 	}
 	// tar the file
 	outputFile, err := ioutil.TempFile("", "varlink_tar_send")
@@ -570,20 +579,7 @@ func (r *LocalRuntime) RemoveVolumes(ctx context.Context, c *cliconfig.VolumeRmV
 
 func (r *LocalRuntime) Push(ctx context.Context, srcName, destination, manifestMIMEType, authfile, signaturePolicyPath string, writer io.Writer, forceCompress bool, signingOptions image.SigningOptions, dockerRegistryOptions *image.DockerRegistryOptions, additionalDockerArchiveTags []reference.NamedTagged) error {
 
-	var (
-		tls       *bool
-		tlsVerify bool
-	)
-	if dockerRegistryOptions.DockerInsecureSkipTLSVerify == types.OptionalBoolTrue {
-		tlsVerify = false
-		tls = &tlsVerify
-	}
-	if dockerRegistryOptions.DockerInsecureSkipTLSVerify == types.OptionalBoolFalse {
-		tlsVerify = true
-		tls = &tlsVerify
-	}
-
-	reply, err := iopodman.PushImage().Send(r.Conn, varlink.More, srcName, destination, tls, signaturePolicyPath, "", dockerRegistryOptions.DockerCertPath, forceCompress, manifestMIMEType, signingOptions.RemoveSignatures, signingOptions.SignBy)
+	reply, err := iopodman.PushImage().Send(r.Conn, varlink.More, srcName, destination, forceCompress, manifestMIMEType, signingOptions.RemoveSignatures, signingOptions.SignBy)
 	if err != nil {
 		return err
 	}

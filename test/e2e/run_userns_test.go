@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"fmt"
 	"os"
 
 	. "github.com/containers/libpod/test/utils"
@@ -30,7 +31,7 @@ var _ = Describe("Podman UserNS support", func() {
 		}
 		podmanTest = PodmanTestCreate(tempdir)
 		podmanTest.Setup()
-		podmanTest.RestoreAllArtifacts()
+		podmanTest.SeedImages()
 	})
 
 	AfterEach(func() {
@@ -76,4 +77,12 @@ var _ = Describe("Podman UserNS support", func() {
 		Expect(ok).To(BeTrue())
 	})
 
+	It("podman --userns=keep-id", func() {
+		session := podmanTest.Podman([]string{"run", "--userns=keep-id", "alpine", "id", "-u"})
+		session.WaitWithDefaultTimeout()
+		Expect(session.ExitCode()).To(Equal(0))
+		uid := fmt.Sprintf("%d", os.Geteuid())
+		ok, _ := session.GrepString(uid)
+		Expect(ok).To(BeTrue())
+	})
 })

@@ -1,5 +1,36 @@
 # Release Notes
 
+## 1.4.0
+### Features
+- The `podman checkpoint` and `podman restore` commands can now be used to migrate containers between Podman installations on different systems ([#1618](https://github.com/containers/libpod/issues/1618))
+- The `podman cp` command now supports a `pause` flag to pause containers while copying into them
+- The remote client now supports a configuration file for pre-configuring connections to remote Podman installations
+
+### Bugfixes
+- Fixed CVE-2019-10152 - The `podman cp` command improperly dereferenced symlinks in host context
+- Fixed a bug where `podman commit` could improperly set environment variables that contained `=` characters ([#3132](https://github.com/containers/libpod/issues/3132))
+- Fixed a bug where rootless Podman would sometimes fail to start containers with forwarded ports ([#2942](https://github.com/containers/libpod/issues/2942))
+- Fixed a bug where `podman version` on the remote client could segfault ([#3145](https://github.com/containers/libpod/issues/3145))
+- Fixed a bug where `podman container runlabel` would use `/proc/self/exe` instead of the path of the Podman command when printing the command being executed
+- Fixed a bug where filtering images by label did not work ([#3163](https://github.com/containers/libpod/issues/3163))
+- Fixed a bug where specifying a bing mount or tmpfs mount over an image volume would cause a container to be unable to start ([#3174](https://github.com/containers/libpod/issues/3174))
+- Fixed a bug where `podman generate kube` did not work with containers with named volumes
+- Fixed a bug where rootless Podman would receive `permission denied` errors accessing `conmon.pid` ([#3187](https://github.com/containers/libpod/issues/3187))
+- Fixed a bug where `podman cp` with a folder specified as target would replace the folder, as opposed to copying into it ([#3184](https://github.com/containers/libpod/issues/3184))
+- Fixed a bug where rootless Podman commands could double-unlock a lock, causing a crash ([#3207](https://github.com/containers/libpod/issues/3207))
+- Fixed a bug where Podman incorrectly set `tmpcopyup` on `/dev/` mounts, causing errors when using the Kata containers runtime ([#3229](https://github.com/containers/libpod/issues/3229))
+- Fixed a bug where `podman exec` would fail on older kernels ([#2968](https://github.com/containers/libpod/issues/2968))
+
+### Misc
+- The `podman commit` command is now usable with the Podman remote client
+- The `--signature-policy` flag (used with several image-related commands) has been deprecated
+- The `podman unshare` command now defines two environment variables in the spawned shell: `CONTAINERS_RUNROOT` and `CONTAINERS_GRAPHROOT`, pointing to temporary and permanent storage for rootless containers
+- Updated vendored containers/storage and containers/image libraries with numerous bugfixes
+- Updated vendored Buildah to v1.8.3
+- Podman now requires [Conmon v0.2.0](https://github.com/containers/conmon/releases/tag/v0.2.0)
+- The `podman cp` command is now aliased as `podman container cp`
+- Rootless Podman will now default `init_path` using root Podman's configuration files (`/etc/containers/libpod.conf` and `/usr/share/containers/libpod.conf`) if not overridden in the rootless configuration
+
 ## 1.3.1
 ### Features
 - The `podman cp` command can now read input redirected to `STDIN`, and output to `STDOUT` instead of a file, using `-` instead of an argument.
@@ -23,7 +54,7 @@
 
 ## 1.3.0
 ### Features
-- Podman now supports container restart policies! The `--restart-policy` flag on `podman create` and `podman run` allows containers to be restarted after they exit. Please note that Podman cannot restart containers after a system reboot - for that, see our next feature
+- Podman now supports container restart policies! The `--restart` flag on `podman create` and `podman run` allows containers to be restarted after they exit. Please note that Podman cannot restart containers after a system reboot - for that, see our next feature
 - Podman `podman generate systemd` command was added to generate systemd unit files for managing Podman containers
 - The `podman runlabel` command now allows a `$GLOBAL_OPTS` variable, which will be populated by global options passed to the `podman runlabel` command, allowing custom storage configurations to be passed into containers run with `runlabel` ([#2399](https://github.com/containers/libpod/issues/2399))
 - The `podman play kube` command now allows `File` and `FileOrCreate` volumes

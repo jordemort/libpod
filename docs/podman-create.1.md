@@ -40,6 +40,13 @@ error. It can even pretend to be a TTY (this is what most commandline
 executables expect) and pass along signals. The **-a** option can be set for
 each of stdin, stdout, and stderr.
 
+**--authfile**
+
+Path of the authentication file. Default is ${XDG_\RUNTIME\_DIR}/containers/auth.json
+
+Note: You can also override the default path of the authentication file by setting the REGISTRY\_AUTH\_FILE
+environment variable. `export REGISTRY_AUTH_FILE=path` (Not available for remote commands)
+
 **--blkio-weight**=*0*
 
 Block IO weight (relative weight) accepts a weight value between 10 and 1000.
@@ -373,7 +380,7 @@ Read in a line delimited file of labels
 
 Not implemented
 
-**--log-driver**="*json-file*"
+**--log-driver**="*k8s-file*"
 
 Logging driver for the container.  Currently not supported.  This flag is a NOOP provided soley for scripting compatibility.
 
@@ -720,11 +727,13 @@ The followings examples are all valid:
 Without this argument the command will be run as root in the container.
 
 **--userns**=host
+**--userns**=keep-id
 **--userns**=ns:my_namespace
 
-Set the user namespace mode for the container. The use of userns is disabled by default.
+Set the user namespace mode for the container.  It defaults to the **PODMAN_USERNS** environment variable.  An empty value means user namespaces are disabled.
 
 - `host`: run in the user namespace of the caller. This is the default if no user namespace options are set. The processes running in the container will have the same privileges on the host as any other process launched by the calling user.
+- `keep-id`: creates a user namespace where the current rootless user's UID:GID are mapped to the same values in the container. This option is ignored for containers created by the root user.
 - `ns`: run the container in the given existing user namespace.
 
 This option is incompatible with --gidmap, --uidmap, --subuid and --subgid

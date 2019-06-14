@@ -561,7 +561,7 @@ func (r *LocalRuntime) attach(ctx context.Context, stdin, stdout *os.File, cid s
 	if err != nil {
 		return nil, err
 	}
-	resize := make(chan remotecommand.TerminalSize)
+	resize := make(chan remotecommand.TerminalSize, 5)
 	haveTerminal := terminal.IsTerminal(int(os.Stdin.Fd()))
 
 	// Check if we are attached to a terminal. If we are, generate resize
@@ -583,7 +583,15 @@ func (r *LocalRuntime) attach(ctx context.Context, stdin, stdout *os.File, cid s
 
 	}
 	// TODO add detach keys support
-	_, err = iopodman.Attach().Send(r.Conn, varlink.Upgrade, cid, detachKeys, start)
+	reply, err := iopodman.Attach().Send(r.Conn, varlink.Upgrade, cid, detachKeys, start)
+	if err != nil {
+		restoreTerminal(oldTermState)
+		return nil, err
+	}
+
+	// See if the server accepts the upgraded connection or returns an error
+	_, err = reply()
+
 	if err != nil {
 		restoreTerminal(oldTermState)
 		return nil, err
@@ -656,6 +664,10 @@ func (r *LocalRuntime) Attach(ctx context.Context, c *cliconfig.AttachValues) er
 
 // Checkpoint one or more containers
 func (r *LocalRuntime) Checkpoint(c *cliconfig.CheckpointValues, options libpod.ContainerCheckpointOptions) error {
+	if c.Export != "" {
+		return errors.New("the remote client does not support exporting checkpoints")
+	}
+
 	var lastError error
 	ids, err := iopodman.GetContainersByContext().Call(r.Conn, c.All, c.Latest, c.InputArgs)
 	if err != nil {
@@ -691,7 +703,11 @@ func (r *LocalRuntime) Checkpoint(c *cliconfig.CheckpointValues, options libpod.
 }
 
 // Restore one or more containers
-func (r *LocalRuntime) Restore(c *cliconfig.RestoreValues, options libpod.ContainerCheckpointOptions) error {
+func (r *LocalRuntime) Restore(ctx context.Context, c *cliconfig.RestoreValues, options libpod.ContainerCheckpointOptions) error {
+	if c.Import != "" {
+		return errors.New("the remote client does not support importing checkpoints")
+	}
+
 	var lastError error
 	ids, err := iopodman.GetContainersByContext().Call(r.Conn, c.All, c.Latest, c.InputArgs)
 	if err != nil {
@@ -985,4 +1001,27 @@ func (r *LocalRuntime) GetNamespaces(container shared.PsContainerOutput) *shared
 		UTS:    container.UTS,
 	}
 	return &ns
+}
+
+// Commit creates a local image from a container
+func (r *LocalRuntime) Commit(ctx context.Context, c *cliconfig.CommitValues, container, imageName string) (string, error) {
+	var iid string
+	reply, err := iopodman.Commit().Send(r.Conn, varlink.More, container, imageName, c.Change, c.Author, c.Message, c.Pause, c.Format)
+	if err != nil {
+		return "", err
+	}
+	for {
+		responses, flags, err := reply()
+		if err != nil {
+			return "", err
+		}
+		for _, line := range responses.Logs {
+			fmt.Fprintln(os.Stderr, line)
+		}
+		iid = responses.Id
+		if flags&varlink.Continues == 0 {
+			break
+		}
+	}
+	return iid, nil
 }

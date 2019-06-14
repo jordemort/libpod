@@ -33,19 +33,19 @@
 %global shortcommit0 %(c=%{commit0}; echo ${c:0:8})
 
 # People want conmon packaged with the copr rpm
-%global import_path_conmon      github.com/kubernetes-sigs/cri-o
+%global import_path_conmon      github.com/containers/conmon
 %global git_conmon      https://%{import_path_conmon}
-%global commit_conmon   4cd5a7c60349be0678d9f1b0657683324c1a2726
+%global commit_conmon   59952292a3b07ac125575024ae21956efe0ecdfb
 %global shortcommit_conmon %(c=%{commit_conmon}; echo ${c:0:7})
 
 Name: podman
-Version: 1.3.1
+Version: 1.4.0
 Release: #COMMITDATE#.git%{shortcommit0}%{?dist}
 Summary: Manage Pods, Containers and Container Images
 License: ASL 2.0
 URL: %{git_podman}
 Source0: %{git0}/archive/%{commit0}/%{repo}-%{shortcommit0}.tar.gz
-Source1: crio.tar.gz
+Source1: conmon.tar.gz
 # e.g. el6 has ppc64 arch without gcc-go, so EA tag is required
 #ExclusiveArch:  %%{?go_arches:%%{go_arches}}%%{!?go_arches:%%{ix86} x86_64 aarch64 %%{arm}}
 ExclusiveArch: aarch64 %{arm} ppc64le s390x x86_64
@@ -371,24 +371,23 @@ GOPATH=$GOPATH go generate ./cmd/podman/varlink/...
 BUILDTAGS=$BUILDTAGS make binaries docs
 
 # build conmon
-pushd crio
+pushd conmon
 
 mkdir _output
 pushd _output
-mkdir -p src/%{provider}.%{provider_tld}/{kubernetes-sigs,opencontainers}
+mkdir -p src/%{provider}.%{provider_tld}/{containers,opencontainers}
 ln -s $(dirs +1 -l) src/%{import_path_conmon}
 popd
 
-ln -s vendor src
-export GOPATH=$(pwd)/_output:$(pwd):%{gopath}
 export BUILDTAGS="selinux seccomp $(hack/btrfs_installed_tag.sh) $(hack/btrfs_tag.sh) containers_image_ostree_stub"
-BUILDTAGS=$BUILDTAGS make -C conmon
+BUILDTAGS=$BUILDTAGS make
 popd
 
 %install
 install -dp %{buildroot}%{_unitdir}
 PODMAN_VERSION=%{version} %{__make} PREFIX=%{buildroot}%{_prefix} ETCDIR=%{buildroot}%{_sysconfdir} \
         install.bin \
+        install.remote \
         install.man \
         install.cni \
         install.systemd \
@@ -402,7 +401,7 @@ install -p -m 644 %{repo}.conf %{buildroot}%{_datadir}/containers
 
 # install conmon
 install -dp %{buildroot}%{_libexecdir}/%{name}
-install -p -m 755 crio/bin/conmon %{buildroot}%{_libexecdir}/%{name}
+install -p -m 755 conmon/bin/conmon %{buildroot}%{_libexecdir}/%{name}
 
 # source codes for building projects
 %if 0%{?with_devel}

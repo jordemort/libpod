@@ -486,6 +486,7 @@ __podman_complete_log_drivers() {
 		none
 		splunk
 		syslog
+		k8s-file
 	" -- "$cur" ) )
 }
 
@@ -500,6 +501,7 @@ __podman_complete_log_options() {
 	local logentries_options="logentries-token"
 	local syslog_options="env labels syslog-address syslog-facility syslog-format syslog-tls-ca-cert syslog-tls-cert syslog-tls-key syslog-tls-skip-verify tag"
 	local splunk_options="env labels splunk-caname splunk-capath splunk-format splunk-gzip splunk-gzip-level splunk-index splunk-insecureskipverify splunk-source splunk-sourcetype splunk-token splunk-url splunk-verify-connection tag"
+	local k8s_file_options="env labels max-file max-size"
 
 	local all_options="$fluentd_options $gcplogs_options $gelf_options $journald_options $logentries_options $json_file_options $syslog_options $splunk_options"
 
@@ -524,6 +526,9 @@ __podman_complete_log_options() {
 			;;
 		json-file)
 			COMPREPLY=( $( compgen -W "$json_file_options" -S = -- "$cur" ) )
+			;;
+		k8s-file)
+			COMPREPLY=( $( compgen -W "$k8s_file_options" -S = -- "$cur" ) )
 			;;
 		logentries)
 			COMPREPLY=( $( compgen -W "$logentries_options" -S = -- "$cur" ) )
@@ -737,6 +742,10 @@ _podman_container_attach() {
 }
 
 _podman_container_checkpoint() {
+     local options_with_args="
+     -e
+     --export
+     "
      local boolean_options="
      -a
      --all
@@ -750,9 +759,15 @@ _podman_container_checkpoint() {
      --leave-running
      --tcp-established
      "
+     case "$prev" in
+        -e|--export)
+            _filedir
+            return
+            ;;
+     esac
      case "$cur" in
 	-*)
-	    COMPREPLY=($(compgen -W "$boolean_options" -- "$cur"))
+	    COMPREPLY=($(compgen -W "$boolean_options $options_with_args" -- "$cur"))
 	    ;;
 	*)
 	    __podman_complete_containers_running
@@ -762,6 +777,10 @@ _podman_container_checkpoint() {
 
 _podman_container_commit() {
      _podman_commit
+}
+
+_podman_container_cp() {
+     _podman_cp
 }
 
 _podman_container_create() {
@@ -835,6 +854,12 @@ _podman_container_restart() {
 }
 
 _podman_container_restore() {
+     local options_with_args="
+     -i
+     --import
+     -n
+     --name
+     "
      local boolean_options="
 	  -a
 	  --all
@@ -846,9 +871,15 @@ _podman_container_restore() {
 	  --latest
 	  --tcp-established
      "
+     case "$prev" in
+        -i|--import)
+            _filedir
+            return
+            ;;
+     esac
      case "$cur" in
 	-*)
-	    COMPREPLY=($(compgen -W "$boolean_options" -- "$cur"))
+	    COMPREPLY=($(compgen -W "$boolean_options $options_with_args" -- "$cur"))
 	    ;;
 	*)
 	    __podman_complete_containers_created
@@ -961,6 +992,7 @@ _podman_container() {
 	 attach
 	 checkpoint
 	 commit
+	 cp
 	 create
 	 diff
 	 exec
@@ -968,7 +1000,7 @@ _podman_container() {
 	 export
 	 inspect
 	 kill
-	 ls
+	 list
 	 logs
 	 mount
 	 pause
@@ -979,6 +1011,7 @@ _podman_container() {
 	 restore
 	 rm
 	 run
+	 runlabel
 	 start
 	 stats
 	 stop
@@ -1145,7 +1178,6 @@ _podman_build() {
      --runtime-flag
      --security-opt
      --shm-size
-     --signature-policy
      -t
      --tag
      --ulimit
@@ -1564,7 +1596,6 @@ _podman_pull() {
     --authfile
     --creds
     --cert-dir
-    --signature-policy
     "
     local boolean_options="
 	--all-tags
@@ -1655,7 +1686,6 @@ _podman_push() {
 	-h
 	--quiet
 	-q
-	--remove-signatures
 	--tls-verify
   "
 
@@ -1665,7 +1695,6 @@ _podman_push() {
     --cert-dir
     --creds
     --sign-by
-    --signature-policy
   "
 
     local all_options="$options_with_args $boolean_options"
@@ -2366,7 +2395,6 @@ _complete_() {
 _podman_load() {
     local options_with_args="
     --input -i
-    --signature-policy
     "
     local boolean_options="
 	 --help
@@ -2382,6 +2410,7 @@ _podman_cp() {
 	  --help
 	  -h
 	  --extract
+	  --pause
      "
 	_complete_ "$boolean_options"
 }
@@ -2492,7 +2521,6 @@ _podman_play_kube() {
     --authfile
     --cert-dir
     --creds
-    --signature-policy
     "
 
     local boolean_options="
@@ -2535,7 +2563,6 @@ _podman_container_runlabel() {
      --cert-dir
      --creds
      --name
-     --signature-policy
     "
 
     local boolean_options="

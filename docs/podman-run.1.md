@@ -54,6 +54,13 @@ error. It can even pretend to be a TTY (this is what most commandline
 executables expect) and pass along signals. The **-a** option can be set for
 each of stdin, stdout, and stderr.
 
+**--authfile**
+
+Path of the authentication file. Default is ${XDG_\RUNTIME\_DIR}/containers/auth.json (Not available for remote commands)
+
+Note: You can also override the default path of the authentication file by setting the REGISTRY\_AUTH\_FILE
+environment variable. `export REGISTRY_AUTH_FILE=path`
+
 **--blkio-weight**=*0*
 
 Block IO weight (relative weight) accepts a weight value between 10 and 1000.
@@ -291,15 +298,15 @@ The initialization time needed for a container to bootstrap. The value can be ex
 The maximum time allowed to complete the healthcheck before an interval is considered failed.  Like start-period, the
 value can be expressed in a time format such as `1m22s`.  The default value is `30s`.
 
+**--help**
+
+Print usage statement
+
 **--hostname**=""
 
 Container host name
 
 Sets the container host name that is available inside the container.
-
-**--help**
-
-Print usage statement
 
 **--http-proxy**=*true*|*false*
 
@@ -387,7 +394,7 @@ Read in a line delimited file of labels
 
 Not implemented
 
-**--log-driver**="*json-file*"
+**--log-driver**="*k8s-file*"
 
 Logging driver for the container.  Currently not supported.  This flag is a NOOP provided soley for scripting compatibility.
 
@@ -756,11 +763,13 @@ The followings examples are all valid:
 Without this argument the command will be run as root in the container.
 
 **--userns**=host
+**--userns**=keep-id
 **--userns**=ns:my_namespace
 
-Set the user namespace mode for the container. The use of userns is disabled by default.
+Set the user namespace mode for the container.  It defaults to the **PODMAN_USERNS** environment variable.  An empty value means user namespaces are disabled.
 
 - `host`: run in the user namespace of the caller. This is the default if no user namespace options are set. The processes running in the container will have the same privileges on the host as any other process launched by the calling user.
+- `keep-id`: creates a user namespace where the current rootless user's UID:GID are mapped to the same values in the container. This option is ignored for containers created by the root user.
 - `ns`: run the container in the given existing user namespace.
 
 This option is incompatible with --gidmap, --uidmap, --subuid and --subgid
@@ -769,24 +778,10 @@ This option is incompatible with --gidmap, --uidmap, --subuid and --subgid
 
 Set the UTS mode for the container
 
-`host`: use the host's UTS namespace inside the container.
-`ns`: specify the user namespace to use.
+- `host`: use the host's UTS namespace inside the container.
+- `ns`: specify the user namespace to use.
 
 **NOTE**: the host mode gives the container access to changing the host's hostname and is therefore considered insecure.
-
-**--userns**=""
-
-Set the user namespace mode for the container. The use of userns is disabled by default.
-
-    **host**: use the host user namespace and enable all privileged options (e.g., `pid=host` or `--privileged`).
-    **ns**: specify the user namespace to use.
-
-**--uts**=*host*
-
-Set the UTS mode for the container
-    **host**: use the host's UTS namespace inside the container.
-    **ns**: specify the user namespace to use.
-    Note: the host mode gives the container access to changing the host's hostname and is therefore considered insecure.
 
 **--volume**, **-v**[=*[HOST-DIR:CONTAINER-DIR[:OPTIONS]]*]
 

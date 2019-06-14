@@ -6,48 +6,70 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/containers/libpod/cmd/podman/remoteclientconfig"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/varlink/go/varlink"
 )
 
-type VarlinkConnectionInfo struct {
-	RemoteUserName string
-	RemoteHost     string
-	VarlinkAddress string
+var remoteEndpoint *Endpoint
+
+func (r RemoteRuntime) RemoteEndpoint() (remoteEndpoint *Endpoint, err error) {
+	remoteConfigConnections, _ := remoteclientconfig.ReadRemoteConfig(r.config)
+
+	// If the user defines an env variable for podman_varlink_bridge
+	// we use that as passed.
+	if bridge := os.Getenv("PODMAN_VARLINK_BRIDGE"); bridge != "" {
+		logrus.Debug("creating a varlink bridge based on env variable")
+		remoteEndpoint, err = newBridgeConnection(bridge, nil, r.cmd.LogLevel)
+		// if an environment variable for podman_varlink_address is defined,
+		// we used that as passed
+	} else if address := os.Getenv("PODMAN_VARLINK_ADDRESS"); address != "" {
+		logrus.Debug("creating a varlink address based on env variable: %s", address)
+		remoteEndpoint, err = newSocketConnection(address)
+		//	if the user provides a remote host, we use it to configure a bridge connection
+	} else if len(r.cmd.RemoteHost) > 0 {
+		logrus.Debug("creating a varlink bridge based on user input")
+		if len(r.cmd.RemoteUserName) < 1 {
+			return nil, errors.New("you must provide a username when providing a remote host name")
+		}
+		rc := remoteclientconfig.RemoteConnection{r.cmd.RemoteHost, r.cmd.RemoteUserName, false}
+		remoteEndpoint, err = newBridgeConnection("", &rc, r.cmd.LogLevel)
+		//  if the user has a config file with connections in it
+	} else if len(remoteConfigConnections.Connections) > 0 {
+		logrus.Debug("creating a varlink bridge based configuration file")
+		var rc *remoteclientconfig.RemoteConnection
+		if len(r.cmd.ConnectionName) > 0 {
+			rc, err = remoteConfigConnections.GetRemoteConnection(r.cmd.ConnectionName)
+		} else {
+			rc, err = remoteConfigConnections.GetDefault()
+		}
+		if err != nil {
+			return nil, err
+		}
+		remoteEndpoint, err = newBridgeConnection("", rc, r.cmd.LogLevel)
+		//	last resort is to make a socket connection with the default varlink address for root user
+	} else {
+		logrus.Debug("creating a varlink address based default root address")
+		remoteEndpoint, err = newSocketConnection(DefaultAddress)
+	}
+	return
 }
 
 // Connect provides a varlink connection
 func (r RemoteRuntime) Connect() (*varlink.Connection, error) {
-	var (
-		err        error
-		connection *varlink.Connection
-	)
-
-	logLevel := r.cmd.LogLevel
-
-	// I'm leaving this here for now as a document of the birdge format.  It can be removed later once the bridge
-	// function is more flushed out.
-	//bridge := `ssh -T root@192.168.122.1 "/usr/bin/varlink -A '/usr/bin/podman varlink \$VARLINK_ADDRESS' bridge"`
-	if len(r.cmd.RemoteHost) > 0 {
-		// The user has provided a remote host endpoint
-		if len(r.cmd.RemoteUserName) < 1 {
-			return nil, errors.New("you must provide a username when providing a remote host name")
-		}
-		bridge := fmt.Sprintf(`ssh -T %s@%s /usr/bin/varlink -A \'/usr/bin/podman --log-level=%s varlink \\\$VARLINK_ADDRESS\' bridge`, r.cmd.RemoteUserName, r.cmd.RemoteHost, logLevel)
-		connection, err = varlink.NewBridge(bridge)
-	} else if bridge := os.Getenv("PODMAN_VARLINK_BRIDGE"); bridge != "" {
-		connection, err = varlink.NewBridge(bridge)
-	} else {
-		address := os.Getenv("PODMAN_VARLINK_ADDRESS")
-		if address == "" {
-			address = DefaultAddress
-		}
-		connection, err = varlink.NewConnection(address)
-	}
+	ep, err := r.RemoteEndpoint()
 	if err != nil {
 		return nil, err
 	}
-	return connection, nil
+
+	switch ep.Type {
+	case DirectConnection:
+		return varlink.NewConnection(ep.Connection)
+	case BridgeConnection:
+		return varlink.NewBridge(ep.Connection)
+	}
+	return nil, errors.New(fmt.Sprintf("Unable to determine type of varlink connection: %s", ep.Connection))
 }
 
 // RefreshConnection is used to replace the current r.Conn after things like
@@ -59,4 +81,13 @@ func (r RemoteRuntime) RefreshConnection() error {
 	}
 	r.Conn = newConn
 	return nil
+}
+
+// newSocketConnection returns an endpoint for a uds based connection
+func newSocketConnection(address string) (*Endpoint, error) {
+	endpoint := Endpoint{
+		Type:       DirectConnection,
+		Connection: address,
+	}
+	return &endpoint, nil
 }

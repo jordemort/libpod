@@ -11,7 +11,7 @@ in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in
 
 [func BuildImageHierarchyMap(name: string) string](#BuildImageHierarchyMap)
 
-[func Commit(name: string, image_name: string, changes: []string, author: string, message: string, pause: bool, manifestType: string) string](#Commit)
+[func Commit(name: string, image_name: string, changes: []string, author: string, message: string, pause: bool, manifestType: string) MoreResponse](#Commit)
 
 [func ContainerArtifacts(name: string, artifactName: string) string](#ContainerArtifacts)
 
@@ -131,9 +131,9 @@ in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in
 
 [func Ps(opts: PsOpts) PsContainer](#Ps)
 
-[func PullImage(name: string, certDir: string, creds: string, signaturePolicy: string, tlsVerify: ) MoreResponse](#PullImage)
+[func PullImage(name: string) MoreResponse](#PullImage)
 
-[func PushImage(name: string, tag: string, tlsverify: , signaturePolicy: string, creds: string, certDir: string, compress: bool, format: string, removeSignatures: bool, signBy: string) MoreResponse](#PushImage)
+[func PushImage(name: string, tag: string, compress: bool, format: string, removeSignatures: bool, signBy: string) MoreResponse](#PushImage)
 
 [func ReceiveFile(path: string, delete: bool) int](#ReceiveFile)
 
@@ -147,7 +147,7 @@ in the [API.md](https://github.com/containers/libpod/blob/master/API.md) file in
 
 [func RestartPod(name: string) string](#RestartPod)
 
-[func SearchImages(query: string, limit: , tlsVerify: , filter: ImageSearchFilter) ImageSearchResult](#SearchImages)
+[func SearchImages(query: string, limit: ?int, filter: ImageSearchFilter) ImageSearchResult](#SearchImages)
 
 [func SendFile(type: string, length: int) string](#SendFile)
 
@@ -308,14 +308,14 @@ BuildImageHierarchyMap is for the development of Podman and should not be used.
 ### <a name="Commit"></a>func Commit
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
-method Commit(name: [string](https://godoc.org/builtin#string), image_name: [string](https://godoc.org/builtin#string), changes: [[]string](#[]string), author: [string](https://godoc.org/builtin#string), message: [string](https://godoc.org/builtin#string), pause: [bool](https://godoc.org/builtin#bool), manifestType: [string](https://godoc.org/builtin#string)) [string](https://godoc.org/builtin#string)</div>
+method Commit(name: [string](https://godoc.org/builtin#string), image_name: [string](https://godoc.org/builtin#string), changes: [[]string](#[]string), author: [string](https://godoc.org/builtin#string), message: [string](https://godoc.org/builtin#string), pause: [bool](https://godoc.org/builtin#bool), manifestType: [string](https://godoc.org/builtin#string)) [MoreResponse](#MoreResponse)</div>
 Commit, creates an image from an existing container. It requires the name or
 ID of the container as well as the resulting image name.  Optionally, you can define an author and message
 to be added to the resulting image.  You can also define changes to the resulting image for the following
 attributes: _CMD, ENTRYPOINT, ENV, EXPOSE, LABEL, ONBUILD, STOPSIGNAL, USER, VOLUME, and WORKDIR_.  To pause the
 container while it is being committed, pass a _true_ bool for the pause argument.  If the container cannot
 be found by the ID or name provided, a (ContainerNotFound)[#ContainerNotFound] error will be returned; otherwise,
-the resulting image's ID will be returned as a string.
+the resulting image's ID will be returned as a string inside a MoreResponse.
 ### <a name="ContainerArtifacts"></a>func ContainerArtifacts
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
@@ -921,16 +921,15 @@ method Ps(opts: [PsOpts](#PsOpts)) [PsContainer](#PsContainer)</div>
 ### <a name="PullImage"></a>func PullImage
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
-method PullImage(name: [string](https://godoc.org/builtin#string), certDir: [string](https://godoc.org/builtin#string), creds: [string](https://godoc.org/builtin#string), signaturePolicy: [string](https://godoc.org/builtin#string), tlsVerify: [](#)) [MoreResponse](#MoreResponse)</div>
+method PullImage(name: [string](https://godoc.org/builtin#string)) [MoreResponse](#MoreResponse)</div>
 PullImage pulls an image from a repository to local storage.  After a successful pull, the image id and logs
 are returned as a [MoreResponse](#MoreResponse).  This connection also will handle a WantsMores request to send
 status as it occurs.
 ### <a name="PushImage"></a>func PushImage
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
-method PushImage(name: [string](https://godoc.org/builtin#string), tag: [string](https://godoc.org/builtin#string), tlsverify: [](#), signaturePolicy: [string](https://godoc.org/builtin#string), creds: [string](https://godoc.org/builtin#string), certDir: [string](https://godoc.org/builtin#string), compress: [bool](https://godoc.org/builtin#bool), format: [string](https://godoc.org/builtin#string), removeSignatures: [bool](https://godoc.org/builtin#bool), signBy: [string](https://godoc.org/builtin#string)) [MoreResponse](#MoreResponse)</div>
-PushImage takes three input arguments: the name or ID of an image, the fully-qualified destination name of the image,
-and a boolean as to whether tls-verify should be used (with false disabling TLS, not affecting the default behavior).
+method PushImage(name: [string](https://godoc.org/builtin#string), tag: [string](https://godoc.org/builtin#string), compress: [bool](https://godoc.org/builtin#bool), format: [string](https://godoc.org/builtin#string), removeSignatures: [bool](https://godoc.org/builtin#bool), signBy: [string](https://godoc.org/builtin#string)) [MoreResponse](#MoreResponse)</div>
+PushImage takes two input arguments: the name or ID of an image, the fully-qualified destination name of the image,
 It will return an [ImageNotFound](#ImageNotFound) error if
 the image cannot be found in local storage; otherwise it will return a [MoreResponse](#MoreResponse)
 ### <a name="ReceiveFile"></a>func ReceiveFile
@@ -1013,7 +1012,7 @@ $ varlink call -m unix:/run/podman/io.podman/io.podman.RestartPod '{"name": "135
 ### <a name="SearchImages"></a>func SearchImages
 <div style="background-color: #E8E8E8; padding: 15px; margin: 10px; border-radius: 10px;">
 
-method SearchImages(query: [string](https://godoc.org/builtin#string), limit: [](#), tlsVerify: [](#), filter: [ImageSearchFilter](#ImageSearchFilter)) [ImageSearchResult](#ImageSearchResult)</div>
+method SearchImages(query: [string](https://godoc.org/builtin#string), limit: [?int](#?int), filter: [ImageSearchFilter](#ImageSearchFilter)) [ImageSearchResult](#ImageSearchResult)</div>
 SearchImages searches available registries for images that contain the
 contents of "query" in their name. If "limit" is given, limits the amount of
 search results per registry.
@@ -1207,8 +1206,6 @@ reportWriter [string](https://godoc.org/builtin#string)
 
 runtimeArgs [[]string](#[]string)
 
-signaturePolicyPath [string](https://godoc.org/builtin#string)
-
 squash [bool](https://godoc.org/builtin#bool)
 ### <a name="BuildOptions"></a>type BuildOptions
 
@@ -1355,197 +1352,197 @@ Create is an input structure for creating containers.
 
 args [[]string](#[]string)
 
-addHost [](#)
+addHost [?[]string](#?[]string)
 
-annotation [](#)
+annotation [?[]string](#?[]string)
 
-attach [](#)
+attach [?[]string](#?[]string)
 
-blkioWeight [](#)
+blkioWeight [?string](#?string)
 
-blkioWeightDevice [](#)
+blkioWeightDevice [?[]string](#?[]string)
 
-capAdd [](#)
+capAdd [?[]string](#?[]string)
 
-capDrop [](#)
+capDrop [?[]string](#?[]string)
 
-cgroupParent [](#)
+cgroupParent [?string](#?string)
 
-cidFile [](#)
+cidFile [?string](#?string)
 
-conmonPidfile [](#)
+conmonPidfile [?string](#?string)
 
-command [](#)
+command [?[]string](#?[]string)
 
-cpuPeriod [](#)
+cpuPeriod [?int](#?int)
 
-cpuQuota [](#)
+cpuQuota [?int](#?int)
 
-cpuRtPeriod [](#)
+cpuRtPeriod [?int](#?int)
 
-cpuRtRuntime [](#)
+cpuRtRuntime [?int](#?int)
 
-cpuShares [](#)
+cpuShares [?int](#?int)
 
-cpus [](#)
+cpus [?float](#?float)
 
-cpuSetCpus [](#)
+cpuSetCpus [?string](#?string)
 
-cpuSetMems [](#)
+cpuSetMems [?string](#?string)
 
-detach [](#)
+detach [?bool](#?bool)
 
-detachKeys [](#)
+detachKeys [?string](#?string)
 
-device [](#)
+device [?[]string](#?[]string)
 
-deviceReadBps [](#)
+deviceReadBps [?[]string](#?[]string)
 
-deviceReadIops [](#)
+deviceReadIops [?[]string](#?[]string)
 
-deviceWriteBps [](#)
+deviceWriteBps [?[]string](#?[]string)
 
-deviceWriteIops [](#)
+deviceWriteIops [?[]string](#?[]string)
 
-dns [](#)
+dns [?[]string](#?[]string)
 
-dnsOpt [](#)
+dnsOpt [?[]string](#?[]string)
 
-dnsSearch [](#)
+dnsSearch [?[]string](#?[]string)
 
-dnsServers [](#)
+dnsServers [?[]string](#?[]string)
 
-entrypoint [](#)
+entrypoint [?string](#?string)
 
-env [](#)
+env [?[]string](#?[]string)
 
-envFile [](#)
+envFile [?[]string](#?[]string)
 
-expose [](#)
+expose [?[]string](#?[]string)
 
-gidmap [](#)
+gidmap [?[]string](#?[]string)
 
-groupadd [](#)
+groupadd [?[]string](#?[]string)
 
-healthcheckCommand [](#)
+healthcheckCommand [?string](#?string)
 
-healthcheckInterval [](#)
+healthcheckInterval [?string](#?string)
 
-healthcheckRetries [](#)
+healthcheckRetries [?int](#?int)
 
-healthcheckStartPeriod [](#)
+healthcheckStartPeriod [?string](#?string)
 
-healthcheckTimeout [](#)
+healthcheckTimeout [?string](#?string)
 
-hostname [](#)
+hostname [?string](#?string)
 
-imageVolume [](#)
+imageVolume [?string](#?string)
 
-init [](#)
+init [?bool](#?bool)
 
-initPath [](#)
+initPath [?string](#?string)
 
-interactive [](#)
+interactive [?bool](#?bool)
 
-ip [](#)
+ip [?string](#?string)
 
-ipc [](#)
+ipc [?string](#?string)
 
-kernelMemory [](#)
+kernelMemory [?string](#?string)
 
-label [](#)
+label [?[]string](#?[]string)
 
-labelFile [](#)
+labelFile [?[]string](#?[]string)
 
-logDriver [](#)
+logDriver [?string](#?string)
 
-logOpt [](#)
+logOpt [?[]string](#?[]string)
 
-macAddress [](#)
+macAddress [?string](#?string)
 
-memory [](#)
+memory [?string](#?string)
 
-memoryReservation [](#)
+memoryReservation [?string](#?string)
 
-memorySwap [](#)
+memorySwap [?string](#?string)
 
-memorySwappiness [](#)
+memorySwappiness [?int](#?int)
 
-name [](#)
+name [?string](#?string)
 
-net [](#)
+net [?string](#?string)
 
-network [](#)
+network [?string](#?string)
 
-noHosts [](#)
+noHosts [?bool](#?bool)
 
-oomKillDisable [](#)
+oomKillDisable [?bool](#?bool)
 
-oomScoreAdj [](#)
+oomScoreAdj [?int](#?int)
 
-pid [](#)
+pid [?string](#?string)
 
-pidsLimit [](#)
+pidsLimit [?int](#?int)
 
-pod [](#)
+pod [?string](#?string)
 
-privileged [](#)
+privileged [?bool](#?bool)
 
-publish [](#)
+publish [?[]string](#?[]string)
 
-publishAll [](#)
+publishAll [?bool](#?bool)
 
-quiet [](#)
+quiet [?bool](#?bool)
 
-readonly [](#)
+readonly [?bool](#?bool)
 
-readonlytmpfs [](#)
+readonlytmpfs [?bool](#?bool)
 
-restart [](#)
+restart [?string](#?string)
 
-rm [](#)
+rm [?bool](#?bool)
 
-rootfs [](#)
+rootfs [?bool](#?bool)
 
-securityOpt [](#)
+securityOpt [?[]string](#?[]string)
 
-shmSize [](#)
+shmSize [?string](#?string)
 
-stopSignal [](#)
+stopSignal [?string](#?string)
 
-stopTimeout [](#)
+stopTimeout [?int](#?int)
 
-storageOpt [](#)
+storageOpt [?[]string](#?[]string)
 
-subuidname [](#)
+subuidname [?string](#?string)
 
-subgidname [](#)
+subgidname [?string](#?string)
 
-sysctl [](#)
+sysctl [?[]string](#?[]string)
 
-systemd [](#)
+systemd [?bool](#?bool)
 
-tmpfs [](#)
+tmpfs [?[]string](#?[]string)
 
-tty [](#)
+tty [?bool](#?bool)
 
-uidmap [](#)
+uidmap [?[]string](#?[]string)
 
-ulimit [](#)
+ulimit [?[]string](#?[]string)
 
-user [](#)
+user [?string](#?string)
 
-userns [](#)
+userns [?string](#?string)
 
-uts [](#)
+uts [?string](#?string)
 
-mount [](#)
+mount [?[]string](#?[]string)
 
-volume [](#)
+volume [?[]string](#?[]string)
 
-volumesFrom [](#)
+volumesFrom [?[]string](#?[]string)
 
-workDir [](#)
+workDir [?string](#?string)
 ### <a name="DiffInfo"></a>type DiffInfo
 
 
@@ -1631,9 +1628,9 @@ compress [bool](https://godoc.org/builtin#bool)
 
 
 
-is_official [](#)
+is_official [?bool](#?bool)
 
-is_automated [](#)
+is_automated [?bool](#?bool)
 
 star_count [int](https://godoc.org/builtin#int)
 ### <a name="ImageSearchResult"></a>type ImageSearchResult
@@ -1885,21 +1882,21 @@ mounts [string](https://godoc.org/builtin#string)
 
 all [bool](https://godoc.org/builtin#bool)
 
-filters [](#)
+filters [?[]string](#?[]string)
 
-last [](#)
+last [?int](#?int)
 
-latest [](#)
+latest [?bool](#?bool)
 
-noTrunc [](#)
+noTrunc [?bool](#?bool)
 
-pod [](#)
+pod [?bool](#?bool)
 
-quiet [](#)
+quiet [?bool](#?bool)
 
-sort [](#)
+sort [?string](#?string)
 
-sync [](#)
+sync [?bool](#?bool)
 ### <a name="Runlabel"></a>type Runlabel
 
 Runlabel describes the required input for container runlabel
@@ -1908,19 +1905,11 @@ image [string](https://godoc.org/builtin#string)
 
 authfile [string](https://godoc.org/builtin#string)
 
-certDir [string](https://godoc.org/builtin#string)
-
-creds [string](https://godoc.org/builtin#string)
-
 display [bool](https://godoc.org/builtin#bool)
 
 name [string](https://godoc.org/builtin#string)
 
 pull [bool](https://godoc.org/builtin#bool)
-
-signaturePolicyPath [string](https://godoc.org/builtin#string)
-
-tlsVerify [](#)
 
 label [string](https://godoc.org/builtin#string)
 

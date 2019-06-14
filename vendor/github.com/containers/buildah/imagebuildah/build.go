@@ -27,6 +27,7 @@ import (
 	"github.com/containers/image/types"
 	"github.com/containers/storage"
 	"github.com/containers/storage/pkg/archive"
+	"github.com/cyphar/filepath-securejoin"
 	docker "github.com/fsouza/go-dockerclient"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -480,22 +481,28 @@ func (s *StageExecutor) volumeCacheRestore() error {
 }
 
 // Copy copies data into the working tree.  The "Download" field is how
-// imagebuilder tells us the instruction was "ADD" and not "COPY".
+// imagebuilder tells us the instruction was "ADD" and not "COPY"
 func (s *StageExecutor) Copy(excludes []string, copies ...imagebuilder.Copy) error {
 	for _, copy := range copies {
-		// If the file exists, check to see if it's a symlink.
-		// If it is a symlink, convert to it's target otherwise
-		// the symlink will be overwritten.
-		fileDest, _ := os.Lstat(filepath.Join(s.mountPoint, copy.Dest))
-		if fileDest != nil {
-			if fileDest.Mode()&os.ModeSymlink != 0 {
-				if symLink, err := resolveSymlink(s.mountPoint, copy.Dest); err == nil {
-					copy.Dest = symLink
-				} else {
-					return errors.Wrapf(err, "error reading symbolic link to %q", copy.Dest)
-				}
+		// Check the file and see if part of it is a symlink.
+		// Convert it to the target if so.  To be ultrasafe
+		// do the same for the mountpoint.
+		hadFinalPathSeparator := len(copy.Dest) > 0 && copy.Dest[len(copy.Dest)-1] == os.PathSeparator
+		secureMountPoint, err := securejoin.SecureJoin("", s.mountPoint)
+		finalPath, err := securejoin.SecureJoin(secureMountPoint, copy.Dest)
+		if err != nil {
+			return errors.Wrapf(err, "error resolving symlinks for copy destination %s", copy.Dest)
+		}
+		if !strings.HasPrefix(finalPath, secureMountPoint) {
+			return errors.Wrapf(err, "error resolving copy destination %s", copy.Dest)
+		}
+		copy.Dest = strings.TrimPrefix(finalPath, secureMountPoint)
+		if len(copy.Dest) == 0 || copy.Dest[len(copy.Dest)-1] != os.PathSeparator {
+			if hadFinalPathSeparator {
+				copy.Dest += string(os.PathSeparator)
 			}
 		}
+
 		if copy.Download {
 			logrus.Debugf("ADD %#v, %#v", excludes, copy)
 		} else {
@@ -506,29 +513,32 @@ func (s *StageExecutor) Copy(excludes []string, copies ...imagebuilder.Copy) err
 		}
 		sources := []string{}
 		for _, src := range copy.Src {
+			contextDir := s.executor.contextDir
+			copyExcludes := excludes
 			if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
 				sources = append(sources, src)
 			} else if len(copy.From) > 0 {
 				if other, ok := s.executor.stages[copy.From]; ok && other.index < s.index {
 					sources = append(sources, filepath.Join(other.mountPoint, src))
+					contextDir = other.mountPoint
 				} else if builder, ok := s.executor.containerMap[copy.From]; ok {
 					sources = append(sources, filepath.Join(builder.MountPoint, src))
+					contextDir = builder.MountPoint
 				} else {
 					return errors.Errorf("the stage %q has not been built", copy.From)
 				}
 			} else {
 				sources = append(sources, filepath.Join(s.executor.contextDir, src))
+				copyExcludes = append(s.executor.excludes, excludes...)
 			}
-		}
-
-		options := buildah.AddAndCopyOptions{
-			Chown:      copy.Chown,
-			ContextDir: s.executor.contextDir,
-			Excludes:   s.executor.excludes,
-		}
-
-		if err := s.builder.Add(copy.Dest, copy.Download, options, sources...); err != nil {
-			return err
+			options := buildah.AddAndCopyOptions{
+				Chown:      copy.Chown,
+				ContextDir: contextDir,
+				Excludes:   copyExcludes,
+			}
+			if err := s.builder.Add(copy.Dest, copy.Download, options, sources...); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -589,7 +599,11 @@ func (s *StageExecutor) Run(run imagebuilder.Run, config docker.Config) error {
 
 	args := run.Args
 	if run.Shell {
-		args = append([]string{"/bin/sh", "-c"}, args...)
+		if len(config.Shell) > 0 && s.builder.Format == buildah.Dockerv2ImageManifest {
+			args = append(config.Shell, args...)
+		} else {
+			args = append([]string{"/bin/sh", "-c"}, args...)
+		}
 	}
 	if err := s.volumeCacheSave(); err != nil {
 		return err
@@ -1218,22 +1232,32 @@ func (s *StageExecutor) layerExists(ctx context.Context, currNode *parser.Node, 
 	if err != nil {
 		return "", errors.Wrap(err, "error getting image list from store")
 	}
-	for _, image := range images {
-		layer, err := s.executor.store.Layer(image.TopLayer)
+	var baseHistory []v1.History
+	if s.builder.FromImageID != "" {
+		baseHistory, err = s.executor.getImageHistory(ctx, s.builder.FromImageID)
 		if err != nil {
-			return "", errors.Wrapf(err, "error getting top layer info")
+			return "", errors.Wrapf(err, "error getting history of base image %q", s.builder.FromImageID)
+		}
+	}
+	for _, image := range images {
+		var imageTopLayer *storage.Layer
+		if image.TopLayer != "" {
+			imageTopLayer, err = s.executor.store.Layer(image.TopLayer)
+			if err != nil {
+				return "", errors.Wrapf(err, "error getting top layer info")
+			}
 		}
 		// If the parent of the top layer of an image is equal to the last entry in b.topLayers
 		// it means that this image is potentially a cached intermediate image from a previous
 		// build. Next we double check that the history of this image is equivalent to the previous
 		// lines in the Dockerfile up till the point we are at in the build.
-		if layer.Parent == s.executor.topLayers[len(s.executor.topLayers)-1] || layer.ID == s.executor.topLayers[len(s.executor.topLayers)-1] {
+		if imageTopLayer == nil || imageTopLayer.Parent == s.executor.topLayers[len(s.executor.topLayers)-1] || imageTopLayer.ID == s.executor.topLayers[len(s.executor.topLayers)-1] {
 			history, err := s.executor.getImageHistory(ctx, image.ID)
 			if err != nil {
 				return "", errors.Wrapf(err, "error getting history of %q", image.ID)
 			}
 			// children + currNode is the point of the Dockerfile we are currently at.
-			if s.executor.historyMatches(append(children, currNode), history) {
+			if s.executor.historyMatches(baseHistory, currNode, history) {
 				// This checks if the files copied during build have been changed if the node is
 				// a COPY or ADD command.
 				filesMatch, err := s.copiedFilesMatch(currNode, history[len(history)-1].Created)
@@ -1282,32 +1306,60 @@ func (b *Executor) getCreatedBy(node *parser.Node) string {
 	return "/bin/sh -c #(nop) " + node.Original
 }
 
-// historyMatches returns true if the history of the image matches the lines
-// in the Dockerfile till the point of build we are at.
+// historyMatches returns true if a candidate history matches the history of our
+// base image (if we have one), plus the current instruction.
 // Used to verify whether a cache of the intermediate image exists and whether
 // to run the build again.
-func (b *Executor) historyMatches(children []*parser.Node, history []v1.History) bool {
-	i := len(history) - 1
-	for j := len(children) - 1; j >= 0; j-- {
-		instruction := children[j].Original
-		if children[j].Value == "run" {
-			instruction = instruction[4:]
-			buildArgs := b.getBuildArgs()
-			// If a previous image was built with some build-args but the new build process doesn't have any build-args
-			// specified, so compare the lengths of the old instruction with the current one
-			// 11 is the length of "/bin/sh -c " that is used to run the run commands
-			if buildArgs == "" && len(history[i].CreatedBy) > len(instruction)+11 {
-				return false
-			}
-			// There are build-args, so check if anything with the build-args has changed
-			if buildArgs != "" && !strings.Contains(history[i].CreatedBy, buildArgs) {
-				return false
-			}
-		}
-		if !strings.Contains(history[i].CreatedBy, instruction) {
+func (b *Executor) historyMatches(baseHistory []v1.History, child *parser.Node, history []v1.History) bool {
+	if len(baseHistory) >= len(history) {
+		return false
+	}
+	if len(history)-len(baseHistory) != 1 {
+		return false
+	}
+	for i := range baseHistory {
+		if baseHistory[i].CreatedBy != history[i].CreatedBy {
 			return false
 		}
-		i--
+		if baseHistory[i].Comment != history[i].Comment {
+			return false
+		}
+		if baseHistory[i].Author != history[i].Author {
+			return false
+		}
+		if baseHistory[i].EmptyLayer != history[i].EmptyLayer {
+			return false
+		}
+		if baseHistory[i].Created != nil && history[i].Created == nil {
+			return false
+		}
+		if baseHistory[i].Created == nil && history[i].Created != nil {
+			return false
+		}
+		if baseHistory[i].Created != nil && history[i].Created != nil && *baseHistory[i].Created != *history[i].Created {
+			return false
+		}
+	}
+	instruction := child.Original
+	switch strings.ToUpper(child.Value) {
+	case "RUN":
+		instruction = instruction[4:]
+		buildArgs := b.getBuildArgs()
+		// If a previous image was built with some build-args but the new build process doesn't have any build-args
+		// specified, the command might be expanded differently, so compare the lengths of the old instruction with
+		// the current one.  11 is the length of "/bin/sh -c " that is used to run the run commands.
+		if buildArgs == "" && len(history[len(baseHistory)].CreatedBy) > len(instruction)+11 {
+			return false
+		}
+		// There are build-args, so check if anything with the build-args has changed
+		if buildArgs != "" && !strings.Contains(history[len(baseHistory)].CreatedBy, buildArgs) {
+			return false
+		}
+		fallthrough
+	default:
+		if !strings.Contains(history[len(baseHistory)].CreatedBy, instruction) {
+			return false
+		}
 	}
 	return true
 }
@@ -1816,8 +1868,8 @@ func (b *Executor) deleteSuccessfulIntermediateCtrs() error {
 }
 
 func (s *StageExecutor) EnsureContainerPath(path string) error {
-	targetPath := filepath.Join(s.mountPoint, path)
-	_, err := os.Lstat(targetPath)
+	targetPath, err := securejoin.SecureJoin(s.mountPoint, path)
+	_, err = os.Lstat(targetPath)
 	if err != nil && os.IsNotExist(err) {
 		err = os.MkdirAll(targetPath, 0755)
 	}
