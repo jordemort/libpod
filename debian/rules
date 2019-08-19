@@ -30,15 +30,15 @@ override_dh_auto_configure:
 	sed -i 's/\.gopathok//g' Makefile
 
 override_dh_auto_build:
-	GOPATH=$(BUILDDIR) $(GO) generate ./cmd/podman/varlink/...
-	GOPATH=$(BUILDDIR) make GO=$(GO) BUILDTAGS=$(BUILDTAGS) LDFLAGS=$(LDFLAGS) podman docs docker-docs
+	$(GO) generate ./cmd/podman/varlink/...
+	make GO=$(GO) BUILDTAGS=$(BUILDTAGS) LDFLAGS=$(LDFLAGS) podman docs docker-docs
 	rm -rf $(BUILDDIR)/obj-*-linux-gnu
 
 override_dh_auto_test:
 
 override_dh_auto_install:
 	install PREFIX=$(PREFIX) -dp $(SYSTEMDDIR)
-	GOPATH=$(BUILDDIR) make GO=$(GO) PREFIX=$(PREFIX) ETCDIR=$(ETCDIR) BINDIR=$(BINDIR) MANDIR=$(MANDIR) \
+	make GO=$(GO) PREFIX=$(PREFIX) ETCDIR=$(ETCDIR) BINDIR=$(BINDIR) MANDIR=$(MANDIR) \
 	   install.bin \
 	   install.cni \
 	   install.completions \
@@ -47,4 +47,3 @@ override_dh_auto_install:
 	   install.systemd
 
 override_dh_golang:
-

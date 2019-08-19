@@ -1,6 +1,12 @@
+podman (1.5.0-2~stretch1) stretch; urgency=medium
+
+  * Build for stretch
+
+ -- Jordan Webb <jordemort@github.com>  Mon, 19 Aug 2019 23:59:00 +0000
+
 podman (1.5.0-2~ubuntu19.04~ppa7) disco; urgency=medium
 
-  * install podman-remote, enable varlink 
+  * install podman-remote, enable varlink
 
  -- Lokesh Mandvekar <lsm5@fedoraproject.org>  Mon, 19 Aug 2019 14:32:42 +0000
 
@@ -18,7 +24,7 @@ podman (1.5.0-2~ubuntu19.04~ppa5) disco; urgency=medium
 
 podman (1.5.0-2~ubuntu19.04~ppa4) disco; urgency=medium
 
-  * don't install seccomp.json 
+  * don't install seccomp.json
 
  -- Lokesh Mandvekar <lsm5@fedoraproject.org>  Mon, 12 Aug 2019 18:22:59 +0000
 
@@ -30,7 +36,7 @@ podman (1.5.0-2~ubuntu19.04~ppa3) disco; urgency=medium
 
 podman (1.5.0-1~ubuntu19.04~ppa2) disco; urgency=medium
 
-  * rebuild 
+  * rebuild
 
  -- Lokesh Mandvekar <lsm5@fedoraproject.org>  Sun, 11 Aug 2019 18:39:45 +0000
 
@@ -48,7 +54,7 @@ podman (1.5.0-1~ubuntu19.04~ppa1) disco; urgency=medium
 
 podman (1.4.4-2~ubuntu19.04~ppa4) disco; urgency=medium
 
-  * correct install-time deps 
+  * correct install-time deps
 
  -- Lokesh Mandvekar <lsm5@fedoraproject.org>  Sun, 28 Jul 2019 20:56:37 +0000
 
@@ -452,7 +458,7 @@ podman (1.2.0-1~dev~ubuntu18.04~ppa6) bionic; urgency=medium
 
 podman (1.2.0-1~dev~ubuntu18.04~ppa5) bionic; urgency=medium
 
-  * containers-common dep properly obsoletes skopeo-containers 
+  * containers-common dep properly obsoletes skopeo-containers
   * autobuilt ea54a1c
 
  -- Lokesh Mandvekar <lsm5@fedoraproject.org>  Mon, 18 Mar 2019 19:17:47 +0000
@@ -472,7 +478,7 @@ podman (1.2.0-1~dev~ubuntu18.04~ppa3) bionic; urgency=medium
 
 podman (1.2.0-1~dev~ubuntu18.04~ppa2) bionic; urgency=medium
 
-  * seccomp.json moved to containers-golang 
+  * seccomp.json moved to containers-golang
   * autobuilt 7f9fdbe
 
  -- Lokesh Mandvekar <lsm5@fedoraproject.org>  Sun, 17 Mar 2019 18:35:27 +0000
@@ -805,7 +811,7 @@ podman (0.11.2-1~ubuntu18.04~ppa5) bionic; urgency=medium
 
 podman (0.11.2-1~ubuntu18.04~ppa4) bionic; urgency=medium
 
-  * build-depends: python3-setuptools 
+  * build-depends: python3-setuptools
   * autobuilt fed6b03
 
  -- Lokesh Mandvekar <lsm5@fedoraproject.org>  Tue, 13 Nov 2018 09:41:58 -0500
@@ -1164,7 +1170,7 @@ podman (0.2-3~ubuntu16.04.2~ppa1) xenial; urgency=medium
 
 podman (0.2-2~ubuntu16.04.2~ppa1) xenial; urgency=medium
 
-  * only build for amd64 
+  * only build for amd64
 
  -- Lokesh Mandvekar <lsm5@fedoraproject.org>  Mon, 12 Feb 2018 19:51:00 +0000
 
