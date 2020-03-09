@@ -61,8 +61,8 @@ override_dh_auto_install:
 	# install.man
 	install -dp $(MANDIR)/man1
 	install -dp $(MANDIR)/man5
-	install -m 644 docs/build/man/*.1 $(MANDIR)/man1
-	install -m 644 docs/source/markdown/links/*1 $(MANDIR)/man1
+	install -m 644 docs/build/man/podman*.1 $(MANDIR)/man1
+	install -m 644 docs/source/markdown/links/podman*1 $(MANDIR)/man1
 	# install.systemd
 	install -dp $(SYSTEMDDIR) $(USERSYSTEMDDIR) $(TMPFILESDIR)
 	install -m 644 contrib/varlink/io.podman.socket $(SYSTEMDDIR)
@@ -72,4 +72,3 @@ override_dh_auto_install:
 	install -m 644 contrib/varlink/podman.conf $(TMPFILESDIR)
 
 override_dh_golang:
-
