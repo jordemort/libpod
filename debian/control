@@ -24,7 +24,7 @@ Depends: ${misc:Depends},
     libgpgme11,
     conmon (>=2.0.1),
     containers-common (>=0.1.37),
-    cri-o-runc | containerd.io
+    containerd.io | cri-o-runc
 Recommends: slirp4netns,
    containernetworking-plugins (>=0.8.1),
    uidmap
