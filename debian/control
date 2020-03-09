@@ -22,7 +22,7 @@ Depends: ${misc:Depends},
     libseccomp2,
     libdevmapper1.02.1,
     libgpgme11,
-    conmon (>=1.0.0),
+    conmon (>=2.0.1),
     containers-common (>=0.1.37),
     cri-o-runc | containerd.io
 Recommends: slirp4netns,
